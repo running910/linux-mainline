@@ -251,6 +251,9 @@ struct mem_cgroup {
 	int	swappiness;
 	/* OOM-Killer disable */
 	int		oom_kill_disable;
+	
+	/* not charge pagecache */
+	int no_count_pagecache;
 
 	/* memory.events and memory.events.local */
 	struct cgroup_file events_file;
@@ -442,6 +445,7 @@ static inline bool mem_cgroup_below_min(struct mem_cgroup *memcg)
 }
 
 int mem_cgroup_charge(struct page *page, struct mm_struct *mm, gfp_t gfp_mask);
+int mem_cgroup_charge_pgc(struct page *page, struct mm_struct *mm, gfp_t gfp_mask);
 
 void mem_cgroup_uncharge(struct page *page);
 void mem_cgroup_uncharge_list(struct list_head *page_list);
@@ -1437,7 +1441,7 @@ static inline void mem_cgroup_track_foreign_dirty(struct page *page,
 	if (mem_cgroup_disabled())
 		return;
 
-	if (unlikely(&page->mem_cgroup->css != wb->memcg_css))
+	if (page->mem_cgroup && unlikely(&page->mem_cgroup->css != wb->memcg_css))
 		mem_cgroup_track_foreign_dirty_slowpath(page, wb);
 }
 

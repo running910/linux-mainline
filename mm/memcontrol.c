@@ -4180,6 +4180,25 @@ static int mem_cgroup_swappiness_write(struct cgroup_subsys_state *css,
 	return 0;
 }
 
+static u64 mem_cgroup_pagecache_count_read(struct cgroup_subsys_state *css,
+								   struct cftype *cft)
+{
+	return mem_cgroup_from_css(css)->no_count_pagecache;
+}
+
+static int mem_cgroup_pagecache_count_write(struct cgroup_subsys_state *css,
+									struct cftype *cft, u64 val)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	if (val > 1)
+		return -EINVAL;
+
+	memcg->no_count_pagecache = val;
+
+	return 0;
+}
+
 static void __mem_cgroup_threshold(struct mem_cgroup *memcg, bool swap)
 {
 	struct mem_cgroup_threshold_ary *t;
@@ -5048,6 +5067,11 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.private = MEMFILE_PRIVATE(_OOM_TYPE, OOM_CONTROL),
 	},
 	{
+		.name = "no_count_pagecache",
+		.read_u64 = mem_cgroup_pagecache_count_read,
+		.write_u64 = mem_cgroup_pagecache_count_write,
+	},
+	{
 		.name = "pressure_level",
 	},
 #ifdef CONFIG_NUMA
@@ -5346,6 +5370,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	if (parent) {
 		memcg->swappiness = mem_cgroup_swappiness(parent);
 		memcg->oom_kill_disable = parent->oom_kill_disable;
+		memcg->no_count_pagecache = parent->no_count_pagecache;
 	}
 	if (!parent) {
 		page_counter_init(&memcg->memory, NULL);
@@ -6791,6 +6816,87 @@ int mem_cgroup_charge(struct page *page, struct mm_struct *mm, gfp_t gfp_mask)
 
 	if (!memcg)
 		memcg = get_mem_cgroup_from_mm(mm);
+
+	ret = try_charge(memcg, gfp_mask, nr_pages);
+	if (ret)
+		goto out_put;
+
+	css_get(&memcg->css);
+	commit_charge(page, memcg);
+
+	local_irq_disable();
+	mem_cgroup_charge_statistics(memcg, page, nr_pages);
+	memcg_check_events(memcg, page);
+	local_irq_enable();
+
+	/*
+	 * Cgroup1's unified memory+swap counter has been charged with the
+	 * new swapcache page, finish the transfer by uncharging the swap
+	 * slot. The swap slot would also get uncharged when it dies, but
+	 * it can stick around indefinitely and we'd count the page twice
+	 * the entire time.
+	 *
+	 * Cgroup2 has separate resource counters for memory and swap,
+	 * so this is a non-issue here. Memory and swap charge lifetimes
+	 * correspond 1:1 to page and swap slot lifetimes: we charge the
+	 * page to memory here, and uncharge swap when the slot is freed.
+	 */
+	if (do_memsw_account() && PageSwapCache(page)) {
+		swp_entry_t entry = { .val = page_private(page) };
+		/*
+		 * The swap entry might not get freed for a long time,
+		 * let's not wait for it.  The page already received a
+		 * memory+swap charge, drop the swap entry duplicate.
+		 */
+		mem_cgroup_uncharge_swap(entry, nr_pages);
+	}
+
+out_put:
+	css_put(&memcg->css);
+out:
+	return ret;
+}
+
+int mem_cgroup_charge_pgc(struct page *page, struct mm_struct *mm, gfp_t gfp_mask)
+{
+	unsigned int nr_pages = thp_nr_pages(page);
+	struct mem_cgroup *memcg = NULL;
+	int ret = 0;
+
+	if (mem_cgroup_disabled())
+		goto out;
+
+	if (PageSwapCache(page)) {
+		swp_entry_t ent = { .val = page_private(page), };
+		unsigned short id;
+
+		/*
+		 * Every swap fault against a single page tries to charge the
+		 * page, bail as early as possible.  shmem_unuse() encounters
+		 * already charged pages, too.  page->mem_cgroup is protected
+		 * by the page lock, which serializes swap cache removal, which
+		 * in turn serializes uncharging.
+		 */
+		VM_BUG_ON_PAGE(!PageLocked(page), page);
+		if (compound_head(page)->mem_cgroup)
+			goto out;
+
+		id = lookup_swap_cgroup_id(ent);
+		rcu_read_lock();
+		memcg = mem_cgroup_from_id(id);
+		if (memcg && !css_tryget_online(&memcg->css))
+			memcg = NULL;
+		rcu_read_unlock();
+	}
+
+	if (!memcg)
+		memcg = get_mem_cgroup_from_mm(mm);
+
+	if(memcg->no_count_pagecache){
+		css_put(&memcg->css);
+		//memcg = NULL;
+		goto out;
+	}
 
 	ret = try_charge(memcg, gfp_mask, nr_pages);
 	if (ret)

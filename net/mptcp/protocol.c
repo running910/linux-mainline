@@ -2104,9 +2104,9 @@ void mptcp_rcv_space_init(struct mptcp_sock *msk, const struct sock *ssk)
 
 	/* initial rcv_space offering made to peer */
 	msk->rcvq_space.space = min_t(u32, tp->rcv_wnd,
-				      TCP_INIT_CWND * tp->advmss);
+				      tp->init_cwnd * tp->advmss);
 	if (msk->rcvq_space.space == 0)
-		msk->rcvq_space.space = TCP_INIT_CWND * TCP_MSS_DEFAULT;
+		msk->rcvq_space.space = tp->init_cwnd * TCP_MSS_DEFAULT;
 }
 
 static struct sock *mptcp_accept(struct sock *sk, int flags, int *err,

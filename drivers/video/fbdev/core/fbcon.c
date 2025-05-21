@@ -1311,10 +1311,7 @@ static void fbcon_putcs(struct vc_data *vc, const unsigned short *s,
 
 static void fbcon_putc(struct vc_data *vc, int c, int ypos, int xpos)
 {
-	unsigned short chr;
-
-	scr_writew(c, &chr);
-	fbcon_putcs(vc, &chr, 1, ypos, xpos);
+	fbcon_putcs(vc, (unsigned short *)&c, 1, ypos, xpos);
 }
 
 static void fbcon_clear_margins(struct vc_data *vc, int bottom_only)
@@ -1617,6 +1614,7 @@ static void fbcon_redraw_blit(struct vc_data *vc, struct fb_info *info,
 			}
 
 			scr_writew(c, d);
+			scr_writew(scr_readw(s + (vc->vc_screenbuf_size >> 1)), d + (vc->vc_screenbuf_size >> 1));
 			console_conditional_schedule();
 			s++;
 			d++;
@@ -1639,6 +1637,7 @@ static void fbcon_redraw_blit(struct vc_data *vc, struct fb_info *info,
 static void fbcon_redraw(struct vc_data *vc, struct fbcon_display *p,
 			 int line, int count, int offset)
 {
+	u16 charmask = vc->vc_hi_font_mask ? 0x1ff : 0xff;
 	unsigned short *d = (unsigned short *)
 	    (vc->vc_origin + vc->vc_size_row * line);
 	unsigned short *s = d + offset;
@@ -1661,18 +1660,24 @@ static void fbcon_redraw(struct vc_data *vc, struct fbcon_display *p,
 					start = s;
 				}
 			}
-			if (c == scr_readw(d)) {
-				if (s > start) {
-					fbcon_putcs(vc, start, s - start,
-						     line, x);
-					x += s - start + 1;
-					start = s + 1;
-				} else {
-					x++;
-					start++;
+			
+			if (((scr_readw(s) & charmask) == 0xff || (scr_readw(s) & charmask) == 0xfe) && scr_readw(s + (vc->vc_screenbuf_size >> 1)) != 0) {
+
+			} else {
+				if (c == scr_readw(d)) {
+					if (s > start) {
+						fbcon_putcs(vc, start, s - start, line, x);
+						x += s - start + 1;
+						start = s + 1;
+					} else {
+						x++;
+						start++;
+					}
 				}
 			}
+			
 			scr_writew(c, d);
+			scr_writew(scr_readw(s + (vc->vc_screenbuf_size >> 1)), d + (vc->vc_screenbuf_size >> 1));
 			console_conditional_schedule();
 			s++;
 			d++;

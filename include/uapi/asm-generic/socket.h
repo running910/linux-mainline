@@ -119,6 +119,8 @@
 
 #define SO_DETACH_REUSEPORT_BPF 68
 
+#define SO_INITCWND             10147
+
 #if !defined(__KERNEL__)
 
 #if __BITS_PER_LONG == 64 || (defined(__x86_64__) && defined(__ILP32__))
@@ -141,6 +143,7 @@
 #define SCM_TIMESTAMP           SO_TIMESTAMP
 #define SCM_TIMESTAMPNS         SO_TIMESTAMPNS
 #define SCM_TIMESTAMPING        SO_TIMESTAMPING
+
 
 #endif
 
