@@ -1,0 +1,3 @@
+config NF_GARBLE
+	tristate "Traffic obfuscation"
+	default y
