@@ -1,38 +1,79 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/sysctl.h>
+#include <linux/rculist.h>
+#include <linux/rcupdate.h>
+#include <linux/slab.h>
+#include <linux/random.h>
+
 
 #define DOMAINS_BUF_LEN 512
 #define MAX_DOMAINS     20
 
+struct garble_config {
+	char domain_buf[DOMAINS_BUF_LEN];       // 域名参数buffer，会被strtep切开
+	char *domain_list[MAX_DOMAINS];         // 域名列表，每个元素指向domain_buf被strsep切开的域名
+	int num_domains;                        // 域名列表里的域名数量
+	struct rcu_head rcu;                    // RCU删除钩子
+};
+
 static int garble_enabled = 0;
-static char garble_domains[DOMAINS_BUF_LEN] = "";
 static char garble_args[DOMAINS_BUF_LEN] = "";
-static char *domain_list[MAX_DOMAINS] = {0}; 
-static int num_domains = 0;
+
+static struct garble_config __rcu *garble_cfg_ptr = NULL;
+
+static void garble_config_free(struct rcu_head *head)
+{
+        struct garble_config *cfg = container_of(head, struct garble_config, rcu);
+        kfree(cfg);
+}
 
 static int proc_handler_domains(struct ctl_table *table, int write,
-                      void __user *buffer, size_t *lenp, loff_t *ppos)
+                                void __user *buffer, size_t *lenp, loff_t *ppos)
 {
-        int i;
+        struct garble_config *new_cfg;
+        struct garble_config *old_cfg;
+        int ret;
+        char *s;
+        char *token;
+        int i = 0;
 
-        int ret = proc_dostring(table, write, buffer, lenp, ppos);
+
+        ret = proc_dostring(table, write, buffer, lenp, ppos);
         if (ret != 0 || !write)
                 return ret;
 
-        memcpy(garble_domains, garble_args, sizeof(garble_domains));
+        new_cfg = kzalloc(sizeof(*new_cfg), GFP_KERNEL);
+        if (!new_cfg)
+                return -ENOMEM;
+        /*
+        * kzalloc已经确保了最后一个字节必定为'\0'
+        */
+        strncpy(new_cfg->domain_buf, (char *)table->data, DOMAINS_BUF_LEN - 1);
 
-        num_domains = 0;
-        char *s = garble_domains;
-        char *token;
-
-        while ((token = strsep(&s, ",")) != NULL && num_domains < MAX_DOMAINS) {
-                domain_list[num_domains++] = token;
+        /* 解析成域名列表 */
+        s = new_cfg->domain_buf;
+        while (((token = strsep(&s, ",")) != NULL) && (i < MAX_DOMAINS)) {
+                new_cfg->domain_list[i++] = token;
+                printk(KERN_INFO "Domain[%d] = %s\n", i, token);
         }
+        new_cfg->num_domains = i;
 
-        printk(KERN_INFO "Parsed %d domains\n", num_domains);
-        for (i = 0; i < num_domains; ++i)
-                printk(KERN_INFO "Domain[%d] = %s\n", i, domain_list[i]);
+        pr_info("garble: updated %d domains\n", new_cfg->num_domains);
+
+        old_cfg = rcu_dereference_protected(garble_cfg_ptr, 1);
+
+        /*
+        * 待所有读者完成后用新指针new_cfg赋值到garble_cfg_ptr指针
+        */
+        rcu_assign_pointer(garble_cfg_ptr, new_cfg);
+
+        /*
+        * 旧的指针old_cfg则在所有读者完成后释放掉
+        */
+        if (NULL != old_cfg) {
+                call_rcu(&old_cfg->rcu, garble_config_free);
+        }
 
         return 0;
 }
@@ -87,4 +128,18 @@ int garble_sysctl_init(void)
         }
 
         return 0;
+}
+
+const char *garble_get_random_domain(void)
+{
+	const char *domain = NULL;
+	struct garble_config *cfg;
+
+	rcu_read_lock();
+	cfg = rcu_dereference(garble_cfg_ptr);
+	if (cfg && (cfg->num_domains > 0))
+		domain = cfg->domain_list[prandom_u32() % cfg->num_domains];
+	rcu_read_unlock();
+
+	return domain;
 }
