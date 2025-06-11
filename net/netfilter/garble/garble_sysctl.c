@@ -22,6 +22,9 @@ static char garble_args[DOMAINS_BUF_LEN] = "";
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
 
+static DEFINE_SPINLOCK(garble_cfg_lock);
+
+
 static void garble_config_free(struct rcu_head *head)
 {
         struct garble_config *cfg = container_of(head, struct garble_config, rcu);
@@ -31,51 +34,57 @@ static void garble_config_free(struct rcu_head *head)
 static int proc_handler_domains(struct ctl_table *table, int write,
                                 void __user *buffer, size_t *lenp, loff_t *ppos)
 {
-        struct garble_config *new_cfg;
-        struct garble_config *old_cfg;
-        int ret;
-        char *s;
-        char *token;
-        int i = 0;
+	struct garble_config *new_cfg;
+	struct garble_config *old_cfg;
+	int ret;
+	char *s;
+	char *token;
+	int i = 0;
+	unsigned long flags;
+
+	ret = proc_dostring(table, write, buffer, lenp, ppos);
+	if (ret != 0 || !write)
+		return ret;
+
+	new_cfg = kzalloc(sizeof(*new_cfg), GFP_KERNEL);
+	if (NULL == new_cfg)
+		return -ENOMEM;
+
+	/*
+	 * strscpy确保domain_buf字符串以'\0'结束（其实kzalloc已经确保了最后一个字节必定为'\0'）
+	 */
+	strscpy(new_cfg->domain_buf, (char *)table->data, DOMAINS_BUF_LEN);
+
+	/* 
+	 * 解析成域名列表
+	 */
+	s = new_cfg->domain_buf;
+	while (((token = strsep(&s, ",")) != NULL) && (i < MAX_DOMAINS)) {
+		if (*token == '\0')
+			continue;
+		new_cfg->domain_list[i++] = token;
+		printk(KERN_INFO "Domain[%d] = %s\n", i, token);
+	}
+	new_cfg->num_domains = i;
+
+	pr_info("garble: updated %d domains\n", new_cfg->num_domains);
+
+	spin_lock_irqsave(&garble_cfg_lock, flags);
+
+	old_cfg = rcu_dereference_protected(garble_cfg_ptr, lockdep_is_held(&garble_cfg_lock));
+
+	/*
+	 * 待所有读者完成后用新指针new_cfg赋值到garble_cfg_ptr指针
+	 */
+	rcu_assign_pointer(garble_cfg_ptr, new_cfg);
+
+	spin_unlock_irqrestore(&garble_cfg_lock, flags);
+
+	if (NULL != old_cfg)
+		call_rcu(&old_cfg->rcu, garble_config_free);
 
 
-        ret = proc_dostring(table, write, buffer, lenp, ppos);
-        if (ret != 0 || !write)
-                return ret;
-
-        new_cfg = kzalloc(sizeof(*new_cfg), GFP_KERNEL);
-        if (!new_cfg)
-                return -ENOMEM;
-        /*
-        * kzalloc已经确保了最后一个字节必定为'\0'
-        */
-        strncpy(new_cfg->domain_buf, (char *)table->data, DOMAINS_BUF_LEN - 1);
-
-        /* 解析成域名列表 */
-        s = new_cfg->domain_buf;
-        while (((token = strsep(&s, ",")) != NULL) && (i < MAX_DOMAINS)) {
-                new_cfg->domain_list[i++] = token;
-                printk(KERN_INFO "Domain[%d] = %s\n", i, token);
-        }
-        new_cfg->num_domains = i;
-
-        pr_info("garble: updated %d domains\n", new_cfg->num_domains);
-
-        old_cfg = rcu_dereference_protected(garble_cfg_ptr, 1);
-
-        /*
-        * 待所有读者完成后用新指针new_cfg赋值到garble_cfg_ptr指针
-        */
-        rcu_assign_pointer(garble_cfg_ptr, new_cfg);
-
-        /*
-        * 旧的指针old_cfg则在所有读者完成后释放掉
-        */
-        if (NULL != old_cfg) {
-                call_rcu(&old_cfg->rcu, garble_config_free);
-        }
-
-        return 0;
+	return 0;
 }
 
 static struct ctl_table garble_table[] = {
@@ -128,6 +137,22 @@ int garble_sysctl_init(void)
         }
 
         return 0;
+}
+
+void garble_sysctl_exit(void)
+{
+	struct garble_config *cfg;
+	unsigned long flags;
+
+	unregister_sysctl_table(garble_sysctl_header);
+
+	spin_lock_irqsave(&garble_cfg_lock, flags);
+	cfg = rcu_dereference_protected(garble_cfg_ptr, lockdep_is_held(&garble_cfg_lock));
+	rcu_assign_pointer(garble_cfg_ptr, NULL);
+	spin_unlock_irqrestore(&garble_cfg_lock, flags);
+
+	if (NULL != cfg)
+		call_rcu(&cfg->rcu, garble_config_free);
 }
 
 const char *garble_get_random_domain(void)
