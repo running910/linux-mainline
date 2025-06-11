@@ -7,6 +7,8 @@ static __exit void nf_garble_exit(void)
 {
 	__log("************* nf_garble_exit");	
 
+	garble_sysctl_exit();
+
 }
 
 static __exit int nf_garble_init(void)
@@ -14,7 +16,6 @@ static __exit int nf_garble_init(void)
         __log("************* nf_garble_init");
 
         garble_sysctl_init();
-
 
         return 0;
 }
