@@ -87,6 +87,8 @@
 
 #include <trace/events/tcp.h>
 
+#include <net/netfilter/nf_garble.h>
+
 #ifdef CONFIG_TCP_MD5SIG
 static int tcp_v4_md5_hash_hdr(char *md5_hash, const struct tcp_md5sig_key *key,
 			       __be32 daddr, __be32 saddr, const struct tcphdr *th);
@@ -943,6 +945,10 @@ static int tcp_v4_send_synack(const struct sock *sk, struct dst_entry *dst,
 		return -1;
 
 	skb = tcp_make_synack(sk, dst, req, foc, synack_type);
+
+#ifdef CONFIG_NF_GARBLE
+	response_tls_client_hello(skb, sk);
+#endif
 
 	if (skb) {
 		__tcp_v4_send_check(skb, ireq->ir_loc_addr, ireq->ir_rmt_addr);
