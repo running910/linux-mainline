@@ -1,3 +1,3 @@
-nf_garble-y := garble.o garble_sysctl.o
+nf_garble-y := garble.o garble_sysctl.o tcp_handshake.o
 
 obj-$(CONFIG_NF_GARBLE) += nf_garble.o
