@@ -10,6 +10,12 @@
 
 #include "garble_sysctl.h"
 
+
+// 127.0.0.0 -> 127.255.255.255
+#define LOOPBACK_MASK    0xff000000
+#define LOOPBACK_NETWORK 0x7f000000
+
+
 typedef struct tcp_tuple_type {
 	__be32 saddr;
 	__be32 daddr;
@@ -157,21 +163,38 @@ struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *
 	return NULL;
 }
 
+static bool check_local_traffic(u32 sip, u32 dip)
+{
+	if ((ntohl(sip) & LOOPBACK_MASK) == LOOPBACK_NETWORK)
+		return true;
+
+	if ((ntohl(dip) & LOOPBACK_MASK) == LOOPBACK_NETWORK)
+		return true;
+
+	if (sip == dip) {
+		return true;
+	}
+
+	return false;
+}
+
 void response_tls_client_hello(struct sk_buff *skb, const struct sock *sk)
 {
 	tcp_tuple_t tuple;
 
+	if (!garble_check_if_enabled())
+		return;
+
 	if (!skb || !sk)
 		return;
 
-	if (!extract_tuple_info(skb, &tuple)) {
+	if (!extract_tuple_info(skb, &tuple))
 		return;
-	}
 
-	// filtering based on ip or ports
+	if (check_local_traffic(tuple.saddr, tuple.daddr))
+		return;
 
 	const char *sni = garble_get_random_domain();
-
 	if (!sni)
 		return;
 

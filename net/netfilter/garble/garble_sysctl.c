@@ -155,6 +155,11 @@ void garble_sysctl_exit(void)
 		call_rcu(&cfg->rcu, garble_config_free);
 }
 
+bool garble_check_if_enabled(void)
+{
+	return garble_enabled;
+}
+
 const char *garble_get_random_domain(void)
 {
 	const char *domain = NULL;
