@@ -17,6 +17,8 @@ typedef struct tcp_tuple_type {
 	__be16 dport;
 } tcp_tuple_t;
 
+unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
+
 tcp_tuple_t *extract_tuple_info(struct sk_buff *skb, tcp_tuple_t *tuple)
 {
 	struct iphdr *iph;
@@ -60,10 +62,8 @@ tcp_tuple_t *extract_tuple_info(struct sk_buff *skb, tcp_tuple_t *tuple)
 	return tuple;
 }
 
-struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *sk, struct sk_buff *in_skb)
+struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *sk, struct sk_buff *in_skb, char *payload, int payload_len)
 {
-	const char *payload = garble_get_random_domain();
-	const int payload_len = strlen(payload);
 	int tcp_hdr_len = sizeof(struct tcphdr);
 	int ip_hdr_len = sizeof(struct iphdr);
 	int total_len = ip_hdr_len + tcp_hdr_len + payload_len;
@@ -164,11 +164,26 @@ void response_tls_client_hello(struct sk_buff *skb, const struct sock *sk)
 	if (!skb || !sk)
 		return;
 
-	if (NULL == extract_tuple_info(skb, &tuple)) {
+	if (!extract_tuple_info(skb, &tuple)) {
 		return;
 	}
 
-	generate_and_send_packet(&tuple, sk, skb);
+	// filtering based on ip or ports
 
-	__log("********* client hello: %s", garble_get_random_domain());
+	const char *sni = garble_get_random_domain();
+
+	if (!sni)
+		return;
+
+	unsigned char payload[512];
+	int payload_len;
+
+	__log("**** build tls starts ******");
+
+	if (!build_tls_client_hello(payload, &payload_len, sni))
+		return;
+
+	__log("**** build tls success ******");
+
+	generate_and_send_packet(&tuple, sk, skb, payload, payload_len);
 }
