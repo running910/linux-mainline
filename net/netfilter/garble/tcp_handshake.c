@@ -57,8 +57,8 @@ tcp_tuple_t *extract_tuple_info(struct sk_buff *skb, tcp_tuple_t *tuple)
 		return NULL;
         }
 
-        printk(KERN_INFO "5-tuple: tcp %pI4:%u -> %pI4:%u proto=%u\n",
-        &saddr, ntohs(sport), &daddr, ntohs(dport), protocol);
+      //  printk(KERN_INFO "5-tuple: tcp %pI4:%u -> %pI4:%u proto=%u\n",
+      //  &saddr, ntohs(sport), &daddr, ntohs(dport), protocol);
 
 	tuple->daddr = daddr;
 	tuple->saddr = saddr;
@@ -79,10 +79,10 @@ struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *
 	u8 *data;
 	struct net *net = sock_net(sk);
 
-	__log("before send tuple: %x sk: %x in_skb: %x", tuple, sk, in_skb);
+	//__log("before send tuple: %x sk: %x in_skb: %x", tuple, sk, in_skb);
 
-	printk(KERN_INFO "********* 5-tuple: tcp %pI4:%u -> %pI4:%u\n",
-		&tuple->saddr, ntohs(tuple->sport), &tuple->daddr, ntohs(tuple->dport));
+	//printk(KERN_INFO "********* 5-tuple: tcp %pI4:%u -> %pI4:%u\n",
+	//	&tuple->saddr, ntohs(tuple->sport), &tuple->daddr, ntohs(tuple->dport));
 
 	// 分配 skb
 	skb = alloc_skb(total_len + LL_MAX_HEADER, GFP_ATOMIC);
@@ -145,7 +145,7 @@ struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *
 		.flowi4_tos = iph->tos,
 	};
 
-	rt = ip_route_output_key(&init_net, &fl4); // 用 init_net 即可
+	rt = ip_route_output_key(net, &fl4); // 用 init_net 即可
 	if (IS_ERR(rt)) {
 		pr_err("ip_route_output_key failed: %ld\n", PTR_ERR(rt));
 		kfree_skb(skb);
@@ -157,7 +157,7 @@ struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *
 
 	int ret = ip_local_out(net, (struct sock *)sk, skb);
 
-	__log("do really send ret %d", ret);
+	//__log("do really send ret %d", ret);
 
 	//kfree_skb(skb);
 	return NULL;
@@ -201,12 +201,12 @@ void response_tls_client_hello(struct sk_buff *skb, const struct sock *sk)
 	unsigned char payload[512];
 	int payload_len;
 
-	__log("**** build tls starts ******");
+	//__log("**** build tls starts ******");
 
 	if (!build_tls_client_hello(payload, &payload_len, sni))
 		return;
 
-	__log("**** build tls success ******");
+	//__log("**** build tls success ******");
 
 	generate_and_send_packet(&tuple, sk, skb, payload, payload_len);
 }
