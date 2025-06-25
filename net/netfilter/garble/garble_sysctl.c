@@ -6,6 +6,7 @@
 #include <linux/slab.h>
 #include <linux/random.h>
 
+#include "garble_sysctl.h"
 
 #define DOMAINS_BUF_LEN 512
 #define MAX_DOMAINS     20

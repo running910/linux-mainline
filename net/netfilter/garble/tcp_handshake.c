@@ -126,8 +126,10 @@ struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *
 	// 设置 skb 元数据
 	skb->protocol = htons(ETH_P_IP);
 	//skb->dev = in_skb->dev;    // NULL pointer
-	skb->mark = in_skb->mark;
-	skb->priority = 0;
+//	skb->mark = in_skb->mark;
+	skb->mark = sk->sk_mark;
+	skb->priority = sk->sk_priority;
+
 	//skb->skb_iif = skb->dev->ifindex;  // 必炸
 
 	// 校验 TCP checksum（需要伪首部）
@@ -178,18 +180,27 @@ static bool check_local_traffic(u32 sip, u32 dip)
 	return false;
 }
 
-void response_tls_client_hello(struct sk_buff *skb, const struct sock *sk)
+void response_tls_client_hello(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct sock *sk)
 {
 	tcp_tuple_t tuple;
+
+	//__log("obvious new connection is comming saddr %x daddr %x sport %d dport %d sk %x",saddr, daddr, sport, dport, sk);
 
 	if (!garble_check_if_enabled())
 		return;
 
-	if (!skb || !sk)
+	if (!saddr || !daddr || !sport || !dport || !sk)
 		return;
 
-	if (!extract_tuple_info(skb, &tuple))
-		return;
+	// 与5.10内核的garble模块保持兼容，这里指的是
+	// 远端发来的包的五元组，因此IP地址与端口对调
+	tuple.daddr = saddr;
+	tuple.saddr = daddr;
+	tuple.dport = sport;
+	tuple.sport = dport;
+
+//	if (!extract_tuple_info(skb, &tuple))
+//		return;
 
 	if (check_local_traffic(tuple.saddr, tuple.daddr))
 		return;
@@ -208,5 +219,5 @@ void response_tls_client_hello(struct sk_buff *skb, const struct sock *sk)
 
 	//__log("**** build tls success ******");
 
-	generate_and_send_packet(&tuple, sk, skb, payload, payload_len);
+	generate_and_send_packet(&tuple, sk, NULL, payload, payload_len);
 }
