@@ -28,7 +28,12 @@ unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const ch
 tcp_tuple_t *extract_tuple_info(struct sk_buff *skb, tcp_tuple_t *tuple)
 {
 	struct iphdr *iph;
-        struct tcphdr *tcph;
+	struct tcphdr *tcph;
+	u8 protocol;
+	__be32 saddr;
+	__be32 daddr;
+	__be16 sport;
+	__be16 dport;
 
         // skb->network_header 应该已经指向 IP 头（由协议栈设置）
         iph = ip_hdr(skb);
@@ -36,14 +41,14 @@ tcp_tuple_t *extract_tuple_info(struct sk_buff *skb, tcp_tuple_t *tuple)
         	return NULL;
 
         // 协议号
-        u8 protocol = iph->protocol;
+        protocol = iph->protocol;
 
         // IP 地址
-        __be32 saddr = iph->saddr;
-        __be32 daddr = iph->daddr;
+        saddr = iph->saddr;
+        daddr = iph->daddr;
 
         // 端口号
-        __be16 sport = 0, dport = 0;
+        sport = 0, dport = 0;
 
         if (protocol == IPPROTO_TCP) {
 		tcph = tcp_hdr(skb);
@@ -77,6 +82,8 @@ struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *
 	struct iphdr *iph;
 	struct tcphdr *tcph;
 	u8 *data;
+	struct rtable *rt;
+	struct flowi4 fl4;
 	struct net *net = sock_net(sk);
 
 	//__log("before send tuple: %x sk: %x in_skb: %x", tuple, sk, in_skb);
@@ -139,13 +146,10 @@ struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *
 
 	ip_send_check(iph);  // 计算 IP checksum
 
-	struct rtable *rt;
-	struct flowi4 fl4 = {
-		.daddr = iph->daddr,
-		.saddr = iph->saddr,
-		.flowi4_proto = IPPROTO_TCP,
-		.flowi4_tos = iph->tos,
-	};
+	fl4.daddr = iph->daddr;
+	fl4.saddr = iph->saddr;
+	fl4.flowi4_proto = IPPROTO_TCP;
+	fl4.flowi4_tos = iph->tos;
 
 	rt = ip_route_output_key(net, &fl4); // 用 init_net 即可
 	if (IS_ERR(rt)) {
@@ -157,9 +161,7 @@ struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *
 	//skb_dst_set(skb, &rt->dst);
 	skb_dst_set(skb, &rt->dst);
 
-	int ret = ip_local_out(net, (struct sock *)sk, skb);
-
-	//__log("do really send ret %d", ret);
+	ip_local_out(net, (struct sock *)sk, skb);
 
 	//kfree_skb(skb);
 	return NULL;
@@ -183,6 +185,9 @@ static bool check_local_traffic(u32 sip, u32 dip)
 void response_tls_client_hello(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct sock *sk)
 {
 	tcp_tuple_t tuple;
+	unsigned char payload[512];
+	int payload_len;
+	const char *sni = NULL;
 
 	//__log("obvious new connection is comming saddr %x daddr %x sport %d dport %d sk %x",saddr, daddr, sport, dport, sk);
 
@@ -205,12 +210,10 @@ void response_tls_client_hello(__be32 saddr, __be32 daddr, __be16 sport, __be16 
 	if (check_local_traffic(tuple.saddr, tuple.daddr))
 		return;
 
-	const char *sni = garble_get_random_domain();
+	sni = garble_get_random_domain();
 	if (!sni)
 		return;
 
-	unsigned char payload[512];
-	int payload_len;
 
 	//__log("**** build tls starts ******");
 
