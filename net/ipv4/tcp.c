@@ -280,6 +280,13 @@
 #include <asm/ioctls.h>
 #include <net/busy_poll.h>
 
+u32 tcp_init_cwnd_size = 10;
+EXPORT_SYMBOL_GPL(tcp_init_cwnd_size);
+
+u32 tcp_timeout_init_ms = 1000;         /* keep same with #define TCP_TIMEOUT_INIT ((unsigned)(1*HZ)) */
+EXPORT_SYMBOL_GPL(tcp_timeout_init_ms);
+
+
 struct percpu_counter tcp_orphan_count;
 EXPORT_SYMBOL_GPL(tcp_orphan_count);
 
@@ -423,12 +430,14 @@ void tcp_init_sock(struct sock *sk)
 	tp->mdev_us = jiffies_to_usecs(TCP_TIMEOUT_INIT);
 	minmax_reset(&tp->rtt_min, tcp_jiffies32, ~0U);
 
+	tp->init_cwnd = tcp_init_cwnd_size;
+
 	/* So many TCP implementations out there (incorrectly) count the
 	 * initial SYN frame in their delayed-ACK and congestion control
 	 * algorithms that we must have the following bandaid to talk
 	 * efficiently to them.  -DaveM
 	 */
-	tp->snd_cwnd = TCP_INIT_CWND;
+	tp->snd_cwnd = tp->init_cwnd;
 
 	/* There's a bubble in the pipe until at least the first ACK. */
 	tp->app_limited = ~0U;
@@ -2690,7 +2699,7 @@ int tcp_disconnect(struct sock *sk, int flags)
 	icsk->icsk_rto_min = TCP_RTO_MIN;
 	icsk->icsk_delack_max = TCP_DELACK_MAX;
 	tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
-	tp->snd_cwnd = TCP_INIT_CWND;
+	tp->snd_cwnd = tp->init_cwnd;
 	tp->snd_cwnd_cnt = 0;
 	tp->window_clamp = 0;
 	tp->delivered = 0;
@@ -2743,6 +2752,7 @@ int tcp_disconnect(struct sock *sk, int flags)
 	tp->rx_opt.dsack = 0;
 	tp->rx_opt.num_sacks = 0;
 	tp->rcv_ooopack = 0;
+	tp->fast_ack_mode = 0;
 
 
 	/* Clean up fastopen related fields */
@@ -4131,11 +4141,49 @@ static void __init tcp_init_mem(void)
 	sysctl_tcp_mem[2] = sysctl_tcp_mem[0] * 2;	/* 9.37 % */
 }
 
+extern struct ctl_table_header *register_net_sysctl(struct net *net, const char *path, struct ctl_table *table);
+
+static struct ctl_table_header *tcp_init_cwnd_ctl_header = NULL;
+
+static struct ctl_table tcp_init_cwnd_ctl_table[] = {
+        {
+                .procname       = "tcp_init_cwnd",
+                .data           = &tcp_init_cwnd_size,
+                .maxlen         = sizeof(int),
+                .mode           = 0644,
+                .proc_handler   = proc_dointvec,
+        },
+        {
+                .procname       = "tcp_timeout_init",
+                .data           = &tcp_timeout_init_ms,
+                .maxlen         = sizeof(int),
+                .mode           = 0644,
+                .proc_handler   = proc_dointvec,
+        },
+        { }
+};
+
+static int create_proc_ctrl_init_cwnd(void)
+{
+        tcp_init_cwnd_ctl_header = register_net_sysctl(&init_net, "net/ipv4", tcp_init_cwnd_ctl_table);
+        if (!tcp_init_cwnd_ctl_header) {
+                __log("create_proc_ctrl_init_cwnd failed!");
+                return -1;
+        }
+
+        __log("tcp_init_cwnd_ctl_table register_sysctl success");
+
+        return 0;
+}
+
+
 void __init tcp_init(void)
 {
 	int max_rshare, max_wshare, cnt;
 	unsigned long limit;
 	unsigned int i;
+
+	create_proc_ctrl_init_cwnd();
 
 	BUILD_BUG_ON(TCP_MIN_SND_MSS <= MAX_TCP_OPTION_SPACE);
 	BUILD_BUG_ON(sizeof(struct tcp_skb_cb) >

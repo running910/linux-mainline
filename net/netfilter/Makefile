@@ -214,3 +214,10 @@ obj-$(CONFIG_IP_SET) += ipset/
 
 # IPVS
 obj-$(CONFIG_IP_VS) += ipvs/
+
+# NF_DNSLISTEN
+obj-$(CONFIG_NF_DNSLISTEN) += nf_dnslisten/
+
+obj-$(CONFIG_NF_GARBLE) += garble/
+
+obj-$(CONFIG_NETFILTER_XT_TARGET_FULLCONENAT) += xt_FULLCONENAT.o

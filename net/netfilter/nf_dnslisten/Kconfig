@@ -1,0 +1,3 @@
+config NF_DNSLISTEN
+	tristate "DNS listening based on cgroup net_cls"
+	default y

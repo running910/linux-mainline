@@ -889,3 +889,5 @@ static inline void ftrace_dump(enum ftrace_dump_mode oops_dump_mode) { }
 	 BUILD_BUG_ON_ZERO((perms) & 2) +					\
 	 (perms))
 #endif
+
+#define __log(fmt, ...) printk("wx_debug: func: %s line: %d file: %s "fmt"\n", __FUNCTION__, __LINE__, __FILE__, ##__VA_ARGS__)

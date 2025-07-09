@@ -297,6 +297,20 @@ static inline unsigned short *screenpos(const struct vc_data *vc, int offset,
 	return p;
 }
 
+		
+static inline unsigned short *screenpos_utf8(const struct vc_data *vc, int offset, int viewed)
+{
+	unsigned short *p;
+
+	if (!viewed)
+		p = (unsigned short *)(vc->vc_origin + offset + vc->vc_screenbuf_size);
+	else if (!vc->vc_sw->con_screen_pos)
+		p = (unsigned short *)(vc->vc_visible_origin + offset + vc->vc_screenbuf_size);
+	else
+		p = vc->vc_sw->con_screen_pos(vc, -offset - 1);
+	return p;
+}
+
 /* Called  from the keyboard irq path.. */
 static inline void scrolldelta(int lines)
 {
@@ -639,6 +653,11 @@ static void con_scroll(struct vc_data *vc, unsigned int t, unsigned int b,
 	}
 	scr_memmovew(d, s, (b - t - nr) * vc->vc_size_row);
 	scr_memsetw(clear, vc->vc_video_erase_char, vc->vc_size_row * nr);
+	
+	d += (vc->vc_screenbuf_size >> 1);
+	s += (vc->vc_screenbuf_size >> 1);
+	scr_memmovew(d, s, (b - t - nr) * vc->vc_size_row);
+	scr_memsetw(d + (b - t - nr) * vc->vc_cols, 0, vc->vc_size_row * nr);
 }
 
 static void do_update_region(struct vc_data *vc, unsigned long start, int count)
@@ -807,6 +826,8 @@ void complement_pos(struct vc_data *vc, int offset)
 	static int old_offset = -1;
 	static unsigned short old;
 	static unsigned short oldx, oldy;
+	static unsigned short *p_ext = NULL;
+	static unsigned short old_ext = 0;
 
 	WARN_CONSOLE_UNLOCKED();
 
@@ -814,7 +835,7 @@ void complement_pos(struct vc_data *vc, int offset)
 	    old_offset < vc->vc_screenbuf_size) {
 		scr_writew(old, screenpos(vc, old_offset, true));
 		if (con_should_update(vc))
-			vc->vc_sw->con_putc(vc, old, oldy, oldx);
+			vc->vc_sw->con_putc(vc, (old_ext << 16)|old, oldy, oldx);
 		notify_update(vc);
 	}
 
@@ -825,13 +846,15 @@ void complement_pos(struct vc_data *vc, int offset)
 		unsigned short new;
 		unsigned short *p;
 		p = screenpos(vc, offset, true);
+		p_ext = screenpos_utf8(vc, offset, 1);
 		old = scr_readw(p);
+		old_ext = scr_readw(p_ext);
 		new = old ^ vc->vc_complement_mask;
 		scr_writew(new, p);
 		if (con_should_update(vc)) {
 			oldx = (offset >> 1) % vc->vc_cols;
 			oldy = (offset >> 1) / vc->vc_cols;
-			vc->vc_sw->con_putc(vc, new, oldy, oldx);
+			vc->vc_sw->con_putc(vc, (old_ext << 16)|old, oldy, oldx);
 		}
 		notify_update(vc);
 	}
@@ -1145,7 +1168,7 @@ int vc_allocate(unsigned int currcons)	/* return 0 on success */
 	    vc->vc_screenbuf_size > KMALLOC_MAX_SIZE || !vc->vc_screenbuf_size)
 		goto err_free;
 	err = -ENOMEM;
-	vc->vc_screenbuf = kzalloc(vc->vc_screenbuf_size, GFP_KERNEL);
+	vc->vc_screenbuf = kzalloc(vc->vc_screenbuf_size * 2, GFP_KERNEL);
 	if (!vc->vc_screenbuf)
 		goto err_free;
 
@@ -1198,7 +1221,7 @@ static int vc_do_resize(struct tty_struct *tty, struct vc_data *vc,
 {
 	unsigned long old_origin, new_origin, new_scr_end, rlth, rrem, err = 0;
 	unsigned long end;
-	unsigned int old_rows, old_row_size, first_copied_row;
+	unsigned int old_rows, old_row_size, first_copied_row, old_screen_size;
 	unsigned int new_cols, new_rows, new_row_size, new_screen_size;
 	unsigned int user;
 	unsigned short *oldscreen, *newscreen;
@@ -1219,13 +1242,14 @@ static int vc_do_resize(struct tty_struct *tty, struct vc_data *vc,
 	new_rows = (lines ? lines : vc->vc_rows);
 	new_row_size = new_cols << 1;
 	new_screen_size = new_row_size * new_rows;
+	old_screen_size = old_rows * old_row_size;
 
 	if (new_cols == vc->vc_cols && new_rows == vc->vc_rows)
 		return 0;
 
 	if (new_screen_size > KMALLOC_MAX_SIZE || !new_screen_size)
 		return -EINVAL;
-	newscreen = kzalloc(new_screen_size, GFP_USER);
+	newscreen = kzalloc(new_screen_size * 2, GFP_USER);
 	if (!newscreen)
 		return -ENOMEM;
 
@@ -1290,15 +1314,25 @@ static int vc_do_resize(struct tty_struct *tty, struct vc_data *vc,
 	while (old_origin < end) {
 		scr_memcpyw((unsigned short *) new_origin,
 			    (unsigned short *) old_origin, rlth);
-		if (rrem)
+		
+		scr_memcpyw((unsigned short *) new_origin + (new_screen_size >> 1),
+				(unsigned short *) old_origin + (old_screen_size >> 1), rlth);
+				
+		if (rrem) {
 			scr_memsetw((void *)(new_origin + rlth),
 				    vc->vc_video_erase_char, rrem);
+			scr_memsetw((void *)(new_origin + rlth + (new_screen_size)),
+					vc->vc_video_erase_char, rrem);
+		}
 		old_origin += old_row_size;
 		new_origin += new_row_size;
 	}
-	if (new_scr_end > new_origin)
+	if (new_scr_end > new_origin) {
 		scr_memsetw((void *)new_origin, vc->vc_video_erase_char,
 			    new_scr_end - new_origin);
+		scr_memsetw((void *)new_origin + (new_screen_size), vc->vc_video_erase_char,
+				new_scr_end - new_origin);
+	}
 	oldscreen = vc->vc_screenbuf;
 	vc->vc_screenbuf = newscreen;
 	vc->vc_screenbuf_size = new_screen_size;
@@ -2615,7 +2649,7 @@ static inline int vc_sanitize_unicode(const int c)
  * @vc_utf_count is the number of continuation bytes still expected to arrive.
  * @vc_npar is the number of continuation bytes arrived so far.
  */
-static int vc_translate_unicode(struct vc_data *vc, int c, bool *rescan)
+static int vc_translate_unicode(struct vc_data *vc, int c, bool *rescan, int *is_utf8)
 {
 	static const u32 utf8_length_changes[] = {
 		0x0000007f, 0x000007ff, 0x0000ffff,
@@ -2652,9 +2686,12 @@ static int vc_translate_unicode(struct vc_data *vc, int c, bool *rescan)
 	}
 
 	/* Nothing to do if an ASCII byte was received */
-	if (c <= 0x7f)
+	if (c <= 0x7f) {
+		*is_utf8 = 0;
 		return c;
+	}
 
+	*is_utf8 = 1;
 	/* First byte of a multibyte sequence received */
 	vc->vc_npar = 0;
 	if ((c & 0xe0) == 0xc0) {
@@ -2681,14 +2718,14 @@ need_more_bytes:
 	return -1;
 }
 
-static int vc_translate(struct vc_data *vc, int *c, bool *rescan)
+static int vc_translate(struct vc_data *vc, int *c, bool *rescan, int *is_utf8)
 {
 	/* Do no translation at all in control states */
 	if (vc->vc_state != ESnormal)
 		return *c;
 
 	if (vc->vc_utf && !vc->vc_disp_ctrl)
-		return *c = vc_translate_unicode(vc, *c, rescan);
+		return *c = vc_translate_unicode(vc, *c, rescan, is_utf8);
 
 	/* no utf or alternate charset mode */
 	return vc_translate_ascii(vc, *c);
@@ -2753,7 +2790,7 @@ static bool vc_is_control(struct vc_data *vc, int tc, int c)
 }
 
 static int vc_con_write_normal(struct vc_data *vc, int tc, int c,
-		struct vc_draw_region *draw)
+		struct vc_draw_region *draw, int is_utf8)
 {
 	int next_c;
 	unsigned char vc_attr = vc->vc_attr;
@@ -2791,7 +2828,7 @@ static int vc_con_write_normal(struct vc_data *vc, int tc, int c,
 			 */
 			tc = conv_uni_to_pc(vc, 0xfffd);
 			if (tc < 0) {
-				inverse = true;
+				//inverse = true;
 				tc = conv_uni_to_pc(vc, '?');
 				if (tc < 0)
 					tc = '?';
@@ -2814,12 +2851,36 @@ static int vc_con_write_normal(struct vc_data *vc, int tc, int c,
 			insert_char(vc, 1);
 		vc_uniscr_putc(vc, next_c);
 
+#if 0
 		if (himask)
 			tc = ((tc & 0x100) ? himask : 0) |
 			      (tc &  0xff);
 		tc |= (vc_attr << 8) & ~himask;
 
 		scr_writew(tc, (u16 *)vc->vc_pos);
+#else
+		if (is_double_width(c) && width==2 && is_utf8==1) {
+			tc = 0xFF;
+			scr_writew(himask ?
+				     ((vc_attr << 8) & ~himask) + ((tc & 0x100) ? himask : 0) + (tc & 0xff) :
+				     (vc_attr << 8) + tc,
+				   (u16 *) vc->vc_pos);
+			scr_writew(c, (u16 *) vc->vc_pos + (vc->vc_screenbuf_size >> 1));
+		} else if (is_double_width(c) && width==1 && is_utf8==1) {
+			tc = 0xFE;
+			scr_writew(himask ?
+				     ((vc_attr << 8) & ~himask) + ((tc & 0x100) ? himask : 0) + (tc & 0xff) :
+				     (vc_attr << 8) + tc,
+				   (u16 *) vc->vc_pos);
+			scr_writew(c, (u16 *) vc->vc_pos + (vc->vc_screenbuf_size >> 1));
+		} else {
+			scr_writew(himask ?
+				     ((vc_attr << 8) & ~himask) + ((tc & 0x100) ? himask : 0) + (tc & 0xff) :
+				     (vc_attr << 8) + tc,
+				   (u16 *) vc->vc_pos);
+			scr_writew(0, (u16 *) vc->vc_pos + (vc->vc_screenbuf_size >> 1));
+		}
+#endif
 
 		if (con_should_update(vc) && draw->x < 0) {
 			draw->x = vc->state.x;
@@ -2861,6 +2922,7 @@ static int do_con_write(struct tty_struct *tty, const unsigned char *buf, int co
 	struct vc_data *vc;
 	struct vt_notifier_param param;
 	bool rescan;
+	int is_utf8 = 0;
 
 	if (in_interrupt())
 		return count;
@@ -2896,8 +2958,10 @@ static int do_con_write(struct tty_struct *tty, const unsigned char *buf, int co
 rescan_last_byte:
 		c = orig;
 		rescan = false;
+		vc->vc_utf = 1;
+		vc->vc_disp_ctrl = 0;
 
-		tc = vc_translate(vc, &c, &rescan);
+		tc = vc_translate(vc, &c, &rescan, &is_utf8);
 		if (tc == -1)
 			continue;
 
@@ -2912,7 +2976,7 @@ rescan_last_byte:
 			continue;
 		}
 
-		if (vc_con_write_normal(vc, tc, c, &draw) < 0)
+		if (vc_con_write_normal(vc, tc, c, &draw, is_utf8) < 0)
 			continue;
 
 		if (rescan)
@@ -3490,7 +3554,7 @@ static int __init con_init(void)
 		tty_port_init(&vc->port);
 		visual_init(vc, currcons, 1);
 		/* Assuming vc->vc_{cols,rows,screenbuf_size} are sane here. */
-		vc->vc_screenbuf = kzalloc(vc->vc_screenbuf_size, GFP_NOWAIT);
+		vc->vc_screenbuf = kzalloc(vc->vc_screenbuf_size * 2, GFP_NOWAIT);
 		vc_init(vc, vc->vc_rows, vc->vc_cols,
 			currcons || !vc->vc_sw->con_save_screen);
 	}
@@ -4729,10 +4793,15 @@ u16 screen_glyph(const struct vc_data *vc, int offset)
 {
 	u16 w = scr_readw(screenpos(vc, offset, true));
 	u16 c = w & 0xff;
-
-	if (w & vc->vc_hi_font_mask)
-		c |= 0x100;
-	return c;
+	u16 c_utf8 = scr_readw(screenpos_utf8(vc, offset, 1));
+	
+	if ((c == 0xff || c == 0xfe) && c_utf8 != 0) {
+		return c_utf8;
+	} else {
+		if (w & vc->vc_hi_font_mask)
+			c |= 0x100;
+		return c;
+	}
 }
 EXPORT_SYMBOL_GPL(screen_glyph);
 

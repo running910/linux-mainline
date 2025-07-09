@@ -262,6 +262,9 @@ void *workingset_eviction(struct page *page, struct mem_cgroup *target_memcg)
 	VM_BUG_ON_PAGE(page_count(page), page);
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
 
+	//if (!target_memcg)
+	//	return NULL;
+	
 	lruvec = mem_cgroup_lruvec(target_memcg, pgdat);
 	workingset_age_nonresident(lruvec, thp_nr_pages(page));
 	/* XXX: target_memcg can be NULL, go through lruvec */

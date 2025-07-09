@@ -1238,6 +1238,41 @@ set_sndbuf:
 		ret = sock_bindtoindex_locked(sk, val);
 		break;
 
+	case SO_INITCWND:
+		if (sk->sk_family != PF_INET && sk->sk_family != PF_INET6) {
+			ret = -ENOPROTOOPT;
+			break;
+		}
+
+		// for the server, tcp state should be established now
+		// for the client, tcp state must be close now
+		// other tcp states are not permitted
+		if (!((1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_CLOSE))) {
+			ret = -EPERM;
+			break;
+		}
+
+		// before sending any data, RFC4898 tcpEStatsPerfHCDataOctetsOut 
+		// must be zero
+		if (tcp_sk(sk)->bytes_sent != 0) {
+			ret = -EPERM;
+			break;
+		}
+
+		if (sk->sk_type != SOCK_STREAM || sk->sk_protocol != IPPROTO_TCP) {
+			ret = -ENOPROTOOPT;
+			break;
+		}
+
+		if (val < 10 || val > 1000) {
+			ret = -EINVAL;
+			break;
+		}
+
+		tcp_sk(sk)->init_cwnd = (u32)val;
+		tcp_sk(sk)->snd_cwnd = tcp_sk(sk)->init_cwnd;
+		break;
+
 	default:
 		ret = -ENOPROTOOPT;
 		break;
