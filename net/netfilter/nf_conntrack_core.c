@@ -1550,6 +1550,7 @@ void nf_conntrack_free(struct nf_conn *ct)
 }
 EXPORT_SYMBOL_GPL(nf_conntrack_free);
 
+extern int if_debug_packet(struct sk_buff *skb);
 
 /* Allocate a new conntrack: we return -ENOMEM if classification
    failed due to stress.  Otherwise it really is unclassifiable. */
@@ -1573,11 +1574,15 @@ init_conntrack(struct net *net, struct nf_conn *tmpl,
 		return NULL;
 	}
 
+	log_skb(skb, "new log skb shows");
+
 	zone = nf_ct_zone_tmpl(tmpl, skb, &tmp);
 	ct = __nf_conntrack_alloc(net, zone, tuple, &repl_tuple, GFP_ATOMIC,
 				  hash);
 	if (IS_ERR(ct))
 		return (struct nf_conntrack_tuple_hash *)ct;
+
+	log_ct(ct, "__nf_conntrack_alloc ct->master %p", ct->master);
 
 	if (!nf_ct_add_synproxy(ct, tmpl)) {
 		nf_conntrack_free(ct);
@@ -1600,12 +1605,21 @@ init_conntrack(struct net *net, struct nf_conn *tmpl,
 			     GFP_ATOMIC);
 
 	local_bh_disable();
+
+	log_skb(skb, "net->ct.expect_count %d", net->ct.expect_count);
+
 	if (net->ct.expect_count) {
 		spin_lock(&nf_conntrack_expect_lock);
 		exp = nf_ct_find_expectation(net, zone, tuple);
+
+		log_skb(skb, "exp %p", exp);
+
 		if (exp) {
 			pr_debug("expectation arrives ct=%p exp=%p\n",
 				 ct, exp);
+
+			log_skb(skb, "get expection!!!");
+
 			/* Welcome, Mr. Bond.  We've been expecting you... */
 			__set_bit(IPS_EXPECTED_BIT, &ct->status);
 			/* exp->master safe, refcnt bumped in nf_ct_find_expectation */
@@ -1636,10 +1650,14 @@ init_conntrack(struct net *net, struct nf_conn *tmpl,
 	local_bh_enable();
 
 	if (exp) {
+		log_ct(ct, "before exp->use %d", exp->use);
 		if (exp->expectfn)
 			exp->expectfn(ct, exp);
 		nf_ct_expect_put(exp);
+		log_ct(ct, "after exp->use %d", exp->use);
 	}
+
+	log_ct(ct, "ct->master %p", ct->master);
 
 	return &ct->tuplehash[IP_CT_DIR_ORIGINAL];
 }
@@ -1672,12 +1690,15 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	hash = hash_conntrack_raw(&tuple, state->net);
 	h = __nf_conntrack_find_get(state->net, zone, &tuple, hash);
 	if (!h) {
+		log_skb_pref(skb, "ct was not found from nf_conntrack_hash");
 		h = init_conntrack(state->net, tmpl, &tuple,
 				   skb, dataoff, hash);
 		if (!h)
 			return 0;
 		if (IS_ERR(h))
 			return PTR_ERR(h);
+	} else {
+		log_skb_pref(skb, "ct was found from nf_conntrack_hash!");
 	}
 	ct = nf_ct_tuplehash_to_ctrack(h);
 
@@ -1789,6 +1810,8 @@ static int nf_conntrack_handle_packet(struct nf_conn *ct,
 	return generic_packet(ct, skb, ctinfo);
 }
 
+extern int if_debug_packet(struct sk_buff *skb);
+
 unsigned int
 nf_conntrack_in(struct sk_buff *skb, const struct nf_hook_state *state)
 {
@@ -1798,13 +1821,21 @@ nf_conntrack_in(struct sk_buff *skb, const struct nf_hook_state *state)
 	int dataoff, ret;
 
 	tmpl = nf_ct_get(skb, &ctinfo);
+
+	log_skb_pref(skb, "say something tmpl %p ctinfo %d IP_CT_UNTRACKED %d", tmpl, ctinfo, IP_CT_UNTRACKED);
+
 	if (tmpl || ctinfo == IP_CT_UNTRACKED) {
 		/* Previously seen (loopback or untracked)?  Ignore. */
 		if ((tmpl && !nf_ct_is_template(tmpl)) ||
-		     ctinfo == IP_CT_UNTRACKED)
+		     ctinfo == IP_CT_UNTRACKED) {
+			log_skb(skb, "are you kidding me just leave???");
 			return NF_ACCEPT;
+		     }
 		skb->_nfct = 0;
 	}
+
+	log_skb(skb, "still here not yeah");
+
 
 	/* rcu_read_lock()ed by nf_hook_thresh */
 	dataoff = get_l4proto(skb, skb_network_offset(skb), state->pf, &protonum);

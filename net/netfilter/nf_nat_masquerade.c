@@ -6,11 +6,13 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_ipv6.h>
+#include <linux/inet.h>
 
 #include <net/netfilter/nf_nat_masquerade.h>
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_core.h>
+//#include <net/netfilter/nf_conntrack.h>
 
 static DEFINE_MUTEX(masq_mutex);
 static unsigned int masq_refcnt __read_mostly;
@@ -19,6 +21,8 @@ static void bcm_nat_expect(struct nf_conn *ct,
                           struct nf_conntrack_expect *exp)
 {
        struct nf_nat_range2 range;
+
+       log_ct_pref(ct, "before ct->master %p", ct->master);
 
        /* This must be a fresh one. */
        BUG_ON(ct->status & IPS_NAT_DONE_MASK);
@@ -29,11 +33,15 @@ static void bcm_nat_expect(struct nf_conn *ct,
                ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3;
        nf_nat_setup_info(ct, &range, NF_NAT_MANIP_SRC);
 
+	log_ct_pref(ct, "middle ct->master %p", ct->master);
+
        /* For DST manip, map port here to where it's expected. */
        range.flags = (NF_NAT_RANGE_MAP_IPS | NF_NAT_RANGE_PROTO_SPECIFIED);
        range.min_proto = range.max_proto = exp->saved_proto;
        range.min_addr = range.max_addr = exp->saved_addr;
        nf_nat_setup_info(ct, &range, NF_NAT_MANIP_DST);
+
+        log_ct_pref(ct, "after ct->master %p", ct->master);
 }
 
 /****************************************************************************/
@@ -43,6 +51,9 @@ static int bcm_nat_help(struct sk_buff *skb, unsigned int protoff,
        int dir = CTINFO2DIR(ctinfo);
        struct nf_conn_help *help = nfct_help(ct);
        struct nf_conntrack_expect *exp;
+
+	log_ct(ct, "what is going on dir %d help->expecting[NF_CT_EXPECT_CLASS_DEFAULT] %d", dir, help->expecting[NF_CT_EXPECT_CLASS_DEFAULT]);
+
 
        if (dir != IP_CT_DIR_ORIGINAL ||
            help->expecting[NF_CT_EXPECT_CLASS_DEFAULT])
@@ -66,10 +77,18 @@ static int bcm_nat_help(struct sk_buff *skb, unsigned int protoff,
        exp->dir = !dir;
        exp->expectfn = bcm_nat_expect;
 
+	char buf[256] = {0};
+
+	log_skb(skb, "expect tuple: %s", log_tuple_and_mask_str(&exp->tuple, &exp->mask, buf, sizeof(buf)));
+
+	log_skb(skb, "expect saved  %pI4:%hu", &exp->saved_addr, ntohs(exp->saved_proto.udp.port));
+
        /* Setup expect */
        nf_ct_expect_related(exp, 0);
        nf_ct_expect_put(exp);
        pr_debug("bcm_nat: expect setup\n");
+
+       log_skb(skb, "expectation setup master %p ct %p", exp->master, ct);
 
        return NF_ACCEPT;
 }
@@ -154,6 +173,10 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
 
 	ct = nf_ct_get(skb, &ctinfo);
 
+    log_skb(skb, "ct: %p ctinfo %d", ct, ctinfo);
+
+    log_skb_pref(skb, "ct: %p ctinfo %d", ct, ctinfo);
+
 	WARN_ON(!(ct && (ctinfo == IP_CT_NEW || ctinfo == IP_CT_RELATED ||
 			 ctinfo == IP_CT_RELATED_REPLY)));
 
@@ -175,6 +198,8 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
 	if (nat)
 		nat->masq_index = out->ifindex;
 
+	log_skb(skb, "nfct_help(ct): %p", nfct_help(ct));
+
 /* RFC 4787 - 4.2.2.  Port Parity
    i.e., an even port will be mapped to an even port, and an odd port will be mapped to an odd port.
 */
@@ -194,11 +219,16 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
                /* Look for existing expectation */
                exp = find_fullcone_exp(ct);
                if (exp) {
+                        log_skb_pref(skb, "exp is found");
+
                        minport = maxport = exp->tuple.dst.u.udp.port;
                        pr_debug("bcm_nat: existing mapped port = %hu\n",
                                 ntohs(minport));
                } else { /* no previous expect */
                        u_int16_t newport, tmpport, orgport;
+
+                     log_skb_pref(skb, "no exp yet");
+
 
                        minport = range->min_proto.all == 0? 
                                ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.
@@ -227,17 +257,30 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
                newrange.max_addr.ip = newrange.min_addr.ip = newsrc;
                newrange.min_proto.udp.port = newrange.max_proto.udp.port = minport;
 
+	       log_ct_pref(ct, "ct bfore change");
+
                /* Set ct helper */
                ret = nf_nat_setup_info(ct, &newrange, NF_NAT_MANIP_SRC);
                if (ret == NF_ACCEPT) {
                        struct nf_conn_help *help = nfct_help(ct);
-                       if (help == NULL)
+
+			log_skb(skb, "at this moment help %p", help);
+
+                       if (help == NULL) {
                                help = nf_ct_helper_ext_add(ct, GFP_ATOMIC);
+                               log_skb(skb, "now nf_ct_helper_ext_add");
+                       }
                        if (help != NULL) {
                                help->helper = &nf_conntrack_helper_bcm_nat;
                                pr_debug("bcm_nat: helper set\n");
+
+                            	log_skb(skb, "add helper");
+
                        }
                }
+
+		log_ct_pref(ct, "ct after change");
+
                return ret;
        }
 

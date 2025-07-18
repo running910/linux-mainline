@@ -10,6 +10,7 @@
 #include <linux/netfilter/x_tables.h>
 #include <net/netfilter/nf_nat.h>
 #include <net/netfilter/nf_nat_masquerade.h>
+#include <net/ip.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
@@ -42,8 +43,14 @@ masquerade_tg(struct sk_buff *skb, const struct xt_action_param *par)
 	range.min_proto = mr->range[0].min;
 	range.max_proto = mr->range[0].max;
 
-       range.min_addr.ip = mr->range[0].min_ip;
-       range.max_addr.ip = mr->range[0].max_ip;
+	//range.min_addr.ip = mr->range[0].min_ip;
+	range.min_addr.ip = 1;
+	range.max_addr.ip = mr->range[0].max_ip;
+
+	log_skb(skb, "######################### postrouting masquerade hook starts");
+
+
+	//__log("gd xt_hooknum(par) %d flags %d min %d max %d min_ip %d max_ip %d", xt_hooknum(par), range.flags, ntohs(range.min_proto.udp.port), ntohs(range.max_proto.udp.port), range.min_addr.ip, range.max_addr.ip);
 
 	return nf_nat_masquerade_ipv4(skb, xt_hooknum(par), &range,
 				      xt_out(par));

@@ -14,6 +14,7 @@
 #define _NF_CONNTRACK_CORE_H
 
 #include <linux/netfilter.h>
+#include <net/ip.h>
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_ecache.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
@@ -52,6 +53,8 @@ nf_conntrack_find_get(struct net *net,
 
 int __nf_conntrack_confirm(struct sk_buff *skb);
 
+extern int if_debug_packet(struct sk_buff *skb);
+
 /* Confirm a connection: returns NF_DROP if packet must be dropped. */
 static inline int nf_conntrack_confirm(struct sk_buff *skb)
 {
@@ -59,11 +62,19 @@ static inline int nf_conntrack_confirm(struct sk_buff *skb)
 	int ret = NF_ACCEPT;
 
 	if (ct) {
-		if (!nf_ct_is_confirmed(ct))
+		if (!nf_ct_is_confirmed(ct)) {
+			log_skb(skb, "not confirmed, now do confirm");
 			ret = __nf_conntrack_confirm(skb);
+		} else {
+			log_skb(skb, "confirmed!");
+		}
 		if (likely(ret == NF_ACCEPT))
 			nf_ct_deliver_cached_events(ct);
 	}
+
+	if (ct)
+		log_skb(skb, "after all this ct state 0x%x", ct->status);
+
 	return ret;
 }
 

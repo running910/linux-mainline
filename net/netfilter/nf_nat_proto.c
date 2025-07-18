@@ -629,6 +629,10 @@ nf_nat_ipv4_fn(void *priv, struct sk_buff *skb,
 	enum ip_conntrack_info ctinfo;
 
 	ct = nf_ct_get(skb, &ctinfo);
+
+	if (!ct)
+		log_skb_pref(skb, "direct come back");
+
 	if (!ct)
 		return NF_ACCEPT;
 
@@ -641,6 +645,8 @@ nf_nat_ipv4_fn(void *priv, struct sk_buff *skb,
 				return NF_ACCEPT;
 		}
 	}
+
+	log_skb(skb, "mark");
 
 	return nf_nat_inet_fn(priv, skb, state);
 }
@@ -687,7 +693,11 @@ nf_nat_ipv4_out(void *priv, struct sk_buff *skb,
 #endif
 	unsigned int ret;
 
+	log_skb(skb, "************ mark before nf_nat_ipv4_fn");
+
 	ret = nf_nat_ipv4_fn(priv, skb, state);
+
+	log_skb(skb, "************ mark after nf_nat_ipv4_fn");
 #ifdef CONFIG_XFRM
 	if (ret != NF_ACCEPT)
 		return ret;
@@ -783,6 +793,7 @@ static const struct nf_hook_ops nf_nat_ipv4_ops[] = {
 
 int nf_nat_ipv4_register_fn(struct net *net, const struct nf_hook_ops *ops)
 {
+	__log("mark");
 	return nf_nat_register_fn(net, ops->pf, ops, nf_nat_ipv4_ops,
 				  ARRAY_SIZE(nf_nat_ipv4_ops));
 }

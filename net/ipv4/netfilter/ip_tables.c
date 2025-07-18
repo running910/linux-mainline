@@ -343,6 +343,8 @@ ipt_do_table(struct sk_buff *skb,
 		acpar.target   = t->u.kernel.target;
 		acpar.targinfo = t->data;
 
+		log_skb(skb, "target: %s", t->u.kernel.target->name);
+
 		verdict = t->u.kernel.target->target(skb, &acpar);
 		if (verdict == XT_CONTINUE) {
 			/* Target might have changed stuff. */

@@ -64,6 +64,8 @@ static int ipt_nat_register_lookups(struct net *net)
 {
 	int i, ret;
 
+	__log("mark");
+
 	for (i = 0; i < ARRAY_SIZE(nf_nat_ipv4_ops); i++) {
 		ret = nf_nat_ipv4_register_fn(net, &nf_nat_ipv4_ops[i]);
 		if (ret) {
@@ -89,6 +91,8 @@ static int __net_init iptable_nat_table_init(struct net *net)
 {
 	struct ipt_replace *repl;
 	int ret;
+
+	__log("mark");
 
 	if (net->ipv4.nat_table)
 		return 0;

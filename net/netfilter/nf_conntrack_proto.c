@@ -134,6 +134,7 @@ unsigned int nf_confirm(struct sk_buff *skb, unsigned int protoff,
 		/* rcu_read_lock()ed by nf_hook_thresh */
 		helper = rcu_dereference(help->helper);
 		if (helper) {
+			log_skb(skb, "really get helps ext");
 			ret = helper->help(skb,
 					   protoff,
 					   ct, ctinfo);
@@ -151,9 +152,13 @@ unsigned int nf_confirm(struct sk_buff *skb, unsigned int protoff,
 	}
 
 	/* We've seen it coming out the other side: confirm it */
+
 	return nf_conntrack_confirm(skb);
 }
 EXPORT_SYMBOL_GPL(nf_confirm);
+
+extern int if_debug_packet(struct sk_buff *skb);
+
 
 static unsigned int ipv4_confirm(void *priv,
 				 struct sk_buff *skb,
@@ -162,9 +167,19 @@ static unsigned int ipv4_confirm(void *priv,
 	enum ip_conntrack_info ctinfo;
 	struct nf_conn *ct;
 
+	log_skb(skb, "######################### postrouting conntrack hook starts");
+	log_skb_pref(skb, "okk");
+
 	ct = nf_ct_get(skb, &ctinfo);
-	if (!ct || ctinfo == IP_CT_RELATED_REPLY)
+	if (!ct || ctinfo == IP_CT_RELATED_REPLY) {
+
+		log_skb(skb, "incredible being here");
+
 		return nf_conntrack_confirm(skb);
+	} else {
+
+		log_skb(skb, "of couse it won't directly nf_conntrack_confirm");
+	}
 
 	return nf_confirm(skb,
 			  skb_network_offset(skb) + ip_hdrlen(skb),
@@ -175,6 +190,7 @@ static unsigned int ipv4_conntrack_in(void *priv,
 				      struct sk_buff *skb,
 				      const struct nf_hook_state *state)
 {
+	log_skb(skb, "######################### prerouting conntrack hook starts");
 	return nf_conntrack_in(skb, state);
 }
 

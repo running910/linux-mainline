@@ -22,6 +22,10 @@
 	 NF_NAT_RANGE_PROTO_RANDOM_FULLY | NF_NAT_RANGE_PROTO_OFFSET | \
 	 NF_NAT_RANGE_NETMAP)
 
+// iptables --to-ports --to-ports 10000-20000 对应min和max
+// iptables -t nat -A POSTROUTING -p udp -o eth0 -j MASQUERADE --to-ports 10000-20000
+// 10000-20000 对应min和max
+// 并且flags的NF_NAT_RANGE_PROTO_SPECIFIED会被置为1
 struct nf_nat_ipv4_range {
 	unsigned int			flags;
 	__be32				min_ip;
