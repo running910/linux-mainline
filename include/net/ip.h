@@ -768,4 +768,131 @@ void ip_sock_set_pktinfo(struct sock *sk);
 void ip_sock_set_recverr(struct sock *sk);
 void ip_sock_set_tos(struct sock *sk, int val);
 
+
+extern u32 netlog_remote_addr;
+extern u32 netlog_inner_addr;
+
+static inline int skb_if_netlog_packet(const struct sk_buff *skb)
+{
+	const struct iphdr *iph;
+
+	if (!skb)
+		return 0;
+
+	iph = ip_hdr(skb);
+
+	//if (iph->protocol != IPPROTO_UDP)
+	//	return 0;
+
+	if (iph->daddr == netlog_remote_addr || iph->saddr == netlog_remote_addr)
+		return 1;
+
+	if (iph->daddr == netlog_inner_addr || iph->saddr == netlog_inner_addr)
+		return 1;
+
+	return 0;
+}
+
+static inline void log_tuple_info(const struct sk_buff *skb, const char *extra)
+{
+	const struct iphdr *ip_header;
+	char proto_str[8] = "UNKNOWN";
+	__be16 src_port = 0, dst_port = 0;
+
+	//if (!skb || !skb_if_netlog_packet(skb))
+	//	return;
+
+	ip_header = ip_hdr(skb);
+
+	switch (ip_header->protocol) {
+	case IPPROTO_TCP: {
+		const struct tcphdr *tcp = tcp_hdr(skb);
+		src_port = tcp->source;
+		dst_port = tcp->dest;
+		strcpy(proto_str, "TCP");
+		break;
+	}
+	case IPPROTO_UDP: {
+		const struct udphdr *udp = udp_hdr(skb);
+		src_port = udp->source;
+		dst_port = udp->dest;
+		strcpy(proto_str, "UDP");
+		break;
+	}
+	}
+
+	if (src_port && dst_port) {
+		__log("[%s] %pI4:%d -> %pI4:%d | %s",
+		      proto_str,
+		      &ip_header->saddr, ntohs(src_port),
+		      &ip_header->daddr, ntohs(dst_port),
+		      extra);
+	} else {
+		__log("[%s] %pI4 -> %pI4 | %s",
+		      proto_str,
+		      &ip_header->saddr,
+		      &ip_header->daddr,
+		      extra);
+	}
+}
+
+#define log_skb_pref(skb, fmt, ...) \
+	do { \
+		if (skb_if_netlog_packet(skb)) { \
+			const struct iphdr *ip_header = ip_hdr(skb); \
+			char proto_str[8] = "UNKNOWN"; \
+			__be16 src_port = 0, dst_port = 0; \
+			char __extra_info[256]; \
+			\
+			switch (ip_header->protocol) { \
+			case IPPROTO_TCP: { \
+				const struct tcphdr *tcp = tcp_hdr(skb); \
+				src_port = tcp->source; \
+				dst_port = tcp->dest; \
+				strcpy(proto_str, "TCP"); \
+				break; \
+			} \
+			case IPPROTO_UDP: { \
+				const struct udphdr *udp = udp_hdr(skb); \
+				src_port = udp->source; \
+				dst_port = udp->dest; \
+				strcpy(proto_str, "UDP"); \
+				break; \
+			} \
+			} \
+			\
+			snprintf(__extra_info, sizeof(__extra_info), fmt, ##__VA_ARGS__); \
+			\
+			if (src_port && dst_port) { \
+				__log("[%s] %pI4:%d -> %pI4:%d | %s", \
+					proto_str, \
+					&ip_header->saddr, ntohs(src_port), \
+					&ip_header->daddr, ntohs(dst_port), \
+					__extra_info); \
+			} else { \
+				__log("[%s] %pI4 -> %pI4 | %s", \
+					proto_str, \
+					&ip_header->saddr, \
+					&ip_header->daddr, \
+					__extra_info); \
+			} \
+		} \
+	} while (0)
+
+#define log_skb(skb, fmt, ...) \
+	do { \
+		if (skb_if_netlog_packet(skb)) { \
+			__log(fmt, ##__VA_ARGS__); \
+		} \
+	} while (0)
+
+#define log_skb_pref_func(skb, fmt, ...) \
+	do { \
+		if (skb_if_netlog_packet(skb)) { \
+			char __extra_info[256]; \
+			snprintf(__extra_info, sizeof(__extra_info), fmt, ##__VA_ARGS__); \
+			log_tuple_info(skb, __extra_info); \
+		} \
+	} while (0)
+
 #endif	/* _IP_H */

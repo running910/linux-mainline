@@ -338,4 +338,128 @@ nf_ct_set(struct sk_buff *skb, struct nf_conn *ct, enum ip_conntrack_info info)
 #define MODULE_ALIAS_NFCT_HELPER(helper) \
         MODULE_ALIAS("nfct-helper-" helper)
 
+
+extern u32 netlog_remote_addr;
+extern u32 netlog_inner_addr;
+
+static inline int ct_if_netlog_packet(const struct nf_conn *ct)
+{
+	const struct nf_conntrack_tuple *orig_tuple, *reply_tuple;
+
+	if (!ct)
+		return 0;
+
+	orig_tuple = &ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
+	reply_tuple = &ct->tuplehash[IP_CT_DIR_REPLY].tuple;
+
+	//if (orig_tuple->dst.protonum != IPPROTO_UDP)
+	//	return 0;
+
+	if (orig_tuple->src.u3.ip == netlog_remote_addr ||  /* ORIG src */
+	    orig_tuple->dst.u3.ip == netlog_remote_addr ||  /* ORIG dst */
+	    reply_tuple->src.u3.ip == netlog_remote_addr || /* REPLY src */
+	    reply_tuple->dst.u3.ip == netlog_remote_addr)   /* REPLY dst */
+		return 1;
+
+	if (orig_tuple->src.u3.ip == netlog_inner_addr ||   /* ORIG src */
+	    orig_tuple->dst.u3.ip == netlog_inner_addr ||   /* ORIG dst */
+	    reply_tuple->src.u3.ip == netlog_inner_addr ||  /* REPLY src */
+	    reply_tuple->dst.u3.ip == netlog_inner_addr)    /* REPLY dst */
+		return 1;
+
+	return 0;
+}
+
+static inline void log_ct_info(const struct nf_conn *ct, const char *extra)
+{
+	const struct nf_conntrack_tuple *orig_tuple, *reply_tuple;
+	const char *proto_str = "UNKNOWN";
+
+	//if (!ct || !ct_if_netlog_packet(ct))
+	//	return;
+
+	orig_tuple = &ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
+	reply_tuple = &ct->tuplehash[IP_CT_DIR_REPLY].tuple;
+
+	switch (orig_tuple->dst.protonum) {
+	case IPPROTO_TCP: proto_str = "TCP"; break;
+	case IPPROTO_UDP: proto_str = "UDP"; break;
+	case IPPROTO_ICMP: proto_str = "ICMP"; break;
+	}
+
+	__log("[%s][orig %pI4:%hu -> %pI4:%hu][reply %pI4:%hu -> %pI4:%hu] | %s",
+		proto_str,
+		&orig_tuple->src.u3.ip, ntohs(orig_tuple->src.u.all),
+		&orig_tuple->dst.u3.ip, ntohs(orig_tuple->dst.u.all),
+		&reply_tuple->src.u3.ip, ntohs(reply_tuple->src.u.all),
+		&reply_tuple->dst.u3.ip, ntohs(reply_tuple->dst.u.all),
+		extra);
+}
+
+// 可显示调用者所属的文件名和函数名
+#define log_ct_pref(ct, fmt, ...) \
+    do { \
+        if (ct_if_netlog_packet(ct)) { \
+            const struct nf_conntrack_tuple *orig_tuple = &(ct)->tuplehash[IP_CT_DIR_ORIGINAL].tuple; \
+            const struct nf_conntrack_tuple *reply_tuple = &(ct)->tuplehash[IP_CT_DIR_REPLY].tuple; \
+            const char *proto_str = "UNKNOWN"; \
+            char __extra_info[256]; \
+            \
+            switch (orig_tuple->dst.protonum) { \
+            case IPPROTO_TCP: proto_str = "TCP"; break; \
+            case IPPROTO_UDP: proto_str = "UDP"; break; \
+            case IPPROTO_ICMP: proto_str = "ICMP"; break; \
+            } \
+            \
+            snprintf(__extra_info, sizeof(__extra_info), fmt, ##__VA_ARGS__); \
+            __log("[%s][orig %pI4:%hu -> %pI4:%hu][reply %pI4:%hu -> %pI4:%hu] | %s", \
+                 proto_str, \
+                 &orig_tuple->src.u3.ip, ntohs(orig_tuple->src.u.all), \
+                 &orig_tuple->dst.u3.ip, ntohs(orig_tuple->dst.u.all), \
+                 &reply_tuple->src.u3.ip, ntohs(reply_tuple->src.u.all), \
+                 &reply_tuple->dst.u3.ip, ntohs(reply_tuple->dst.u.all), \
+                 __extra_info); \
+        } \
+    } while (0)
+
+#define log_ct(ct, fmt, ...) \
+	do { \
+		if (ct_if_netlog_packet(ct)) { \
+			__log(fmt, ##__VA_ARGS__); \
+		} \
+	} while (0)
+
+#define log_ct_pref_func(ct, fmt, ...) \
+	do { \
+		if (ct_if_netlog_packet(ct)) { \
+			char __extra_info[256]; \
+			snprintf(__extra_info, sizeof(__extra_info), fmt, ##__VA_ARGS__); \
+			log_ct_info(ct, __extra_info); \
+		} \
+	} while (0)
+
+static inline const char *log_tuple_and_mask_str(const struct nf_conntrack_tuple *tuple, const struct nf_conntrack_tuple_mask *mask, char *buf, int len)
+{
+	const char *proto_str = "UNKNOWN";
+
+	if (!tuple || !mask) {
+		return buf;
+	}
+
+	// 协议类型转换
+	switch (tuple->dst.protonum) {
+	case IPPROTO_TCP: proto_str = "TCP"; break;
+	case IPPROTO_UDP: proto_str = "UDP"; break;
+	case IPPROTO_ICMP: proto_str = "ICMP"; break;
+	}
+
+	snprintf(buf, len, "[Tuple][%s] %pI4:%hu -> %pI4:%hu [Mask] src_ip=%pI4 src_port=%hu", 
+		proto_str,
+		&tuple->src.u3.ip, ntohs(tuple->src.u.all),
+		&tuple->dst.u3.ip, ntohs(tuple->dst.u.all),
+		&mask->src.u3.ip, ntohs(mask->src.u.all));
+
+	return buf;
+}
+
 #endif /* _NF_CONNTRACK_H */
