@@ -68,12 +68,14 @@ static int bcm_nat_help(struct sk_buff *skb, unsigned int protoff,
        if ((exp = nf_ct_expect_alloc(ct)) == NULL)
                return NF_ACCEPT;
 
+    log_skb(skb, "expect proto %d", ct->tuplehash[dir].tuple.dst.protonum);
+
        nf_ct_expect_init(exp, NF_CT_EXPECT_CLASS_DEFAULT, AF_INET, NULL,
-                         &ct->tuplehash[!dir].tuple.dst.u3, IPPROTO_UDP,
-                         NULL, &ct->tuplehash[!dir].tuple.dst.u.udp.port);
+                         &ct->tuplehash[!dir].tuple.dst.u3, ct->tuplehash[dir].tuple.dst.protonum,
+                         NULL, &ct->tuplehash[!dir].tuple.dst.u.all);
        exp->flags = NF_CT_EXPECT_PERMANENT;
        exp->saved_addr = ct->tuplehash[dir].tuple.src.u3;
-       exp->saved_proto.udp.port = ct->tuplehash[dir].tuple.src.u.udp.port;
+       exp->saved_proto.all = ct->tuplehash[dir].tuple.src.u.all;
        exp->dir = !dir;
        exp->expectfn = bcm_nat_expect;
 
@@ -104,7 +106,7 @@ static struct nf_conntrack_helper nf_conntrack_helper_bcm_nat __read_mostly = {
        .name = "BCM-NAT",
        .me = THIS_MODULE,
        .tuple.src.l3num = AF_INET,
-       .tuple.dst.protonum = IPPROTO_UDP,
+       //.tuple.dst.protonum = IPPROTO_UDP,
        .expect_policy = &bcm_nat_exp_policy,
        .expect_class_max = 1,
        .help = bcm_nat_help,
@@ -113,21 +115,25 @@ static struct nf_conntrack_helper nf_conntrack_helper_bcm_nat __read_mostly = {
 /****************************************************************************/
 static inline int find_exp(__be32 ip, __be16 port, struct nf_conn *ct)
 {
-       struct nf_conntrack_tuple tuple;
-       struct nf_conntrack_expect *i = NULL;
+	struct nf_conntrack_tuple tuple;
+	struct nf_conntrack_expect *i = NULL;
 
 
-       memset(&tuple, 0, sizeof(tuple));
-       tuple.src.l3num = AF_INET;
-       tuple.dst.protonum = IPPROTO_UDP;
-       tuple.dst.u3.ip = ip;
-       tuple.dst.u.udp.port = port;
+	memset(&tuple, 0, sizeof(tuple));
+	tuple.src.l3num = AF_INET;
+	//tuple.dst.protonum = IPPROTO_UDP;
+	tuple.dst.protonum = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum;
+	tuple.dst.u3.ip = ip;
+	// tuple.dst.u.udp.port = port;
+	tuple.dst.u.all = port;
 
-       rcu_read_lock();
-       i = __nf_ct_expect_find(nf_ct_net(ct), nf_ct_zone(ct), &tuple);
-       rcu_read_unlock();
+	log_ct(ct, "happens to be tuple.dst.u.udp.port:%d tuple.dst.protonum:%d", tuple.dst.u.udp.port, tuple.dst.protonum);
 
-       return i != NULL;
+	rcu_read_lock();
+	i = __nf_ct_expect_find(nf_ct_net(ct), nf_ct_zone(ct), &tuple);
+	rcu_read_unlock();
+
+	return i != NULL;
 }
 
 /****************************************************************************/
@@ -146,7 +152,7 @@ static inline struct nf_conntrack_expect *find_fullcone_exp(struct nf_conn *ct)
                            i->saved_proto.all == tp->src.u.all &&
                            i->tuple.dst.protonum == tp->dst.protonum &&
                            i->tuple.src.u3.ip == 0 &&
-                           i->tuple.src.u.udp.port == 0) {
+                           i->tuple.src.u.all == 0) { 
                                exp = i;
                                break;
                        }
@@ -206,7 +212,7 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
 #define CHECK_PORT_PARITY(a, b) ((a%2)==(b%2))
        if (range->min_addr.ip != 0 /* nat_mode == full cone */
            && (nfct_help(ct) == NULL || nfct_help(ct)->helper == NULL)
-           && nf_ct_protonum(ct) == IPPROTO_UDP) {
+           && (nf_ct_protonum(ct) == IPPROTO_UDP || nf_ct_protonum(ct) == IPPROTO_TCP)) {
                unsigned int ret;
                u_int16_t minport;
                u_int16_t maxport;
@@ -219,15 +225,18 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
                /* Look for existing expectation */
                exp = find_fullcone_exp(ct);
                if (exp) {
-                        log_skb_pref(skb, "exp is found");
+                        log_skb_pref(skb, "exp is found, reuse snat port %hu", exp->tuple.dst.u.all);
 
-                       minport = maxport = exp->tuple.dst.u.udp.port;
+                     //  minport = maxport = exp->tuple.dst.u.udp.port;
+			minport = maxport = exp->tuple.dst.u.all;
                        pr_debug("bcm_nat: existing mapped port = %hu\n",
                                 ntohs(minport));
                } else { /* no previous expect */
                        u_int16_t newport, tmpport, orgport;
 
                      log_skb_pref(skb, "no exp yet");
+
+                     log_skb(skb, "miniport %hu maxport %hu", range->min_proto.all, range->max_proto.all);
 
 
                        minport = range->min_proto.all == 0? 
@@ -236,6 +245,8 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
                        maxport = range->max_proto.all == 0? 
                                htons(65535) : range->max_proto.all;
                         orgport = ntohs(minport);
+
+			 log_skb(skb, "now start to choose miniport %hu maxport %hu", htons(minport), htons(maxport));
                        for (newport = ntohs(minport),tmpport = ntohs(maxport); 
                             newport <= tmpport; newport++) {
                                if (CHECK_PORT_PARITY(orgport, newport) && !find_exp(newsrc, htons(newport), ct)) {
@@ -245,6 +256,7 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
                                        break;
                                }
                        }
+		        log_skb(skb, "finally chosen miniport %hu maxport %hu", htons(minport), htons(maxport));
                }
                spin_unlock_bh(&nf_conntrack_expect_lock);
 
