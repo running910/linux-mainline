@@ -51,6 +51,7 @@ static int bcm_nat_help(struct sk_buff *skb, unsigned int protoff,
        int dir = CTINFO2DIR(ctinfo);
        struct nf_conn_help *help = nfct_help(ct);
        struct nf_conntrack_expect *exp;
+       int ret;
 
 	log_ct(ct, "what is going on dir %d help->expecting[NF_CT_EXPECT_CLASS_DEFAULT] %d", dir, help->expecting[NF_CT_EXPECT_CLASS_DEFAULT]);
 
@@ -86,11 +87,13 @@ static int bcm_nat_help(struct sk_buff *skb, unsigned int protoff,
 	log_skb(skb, "expect saved  %pI4:%hu", &exp->saved_addr, ntohs(exp->saved_proto.udp.port));
 
        /* Setup expect */
-       nf_ct_expect_related(exp, 0);
+       ret = nf_ct_expect_related(exp, 0);
        nf_ct_expect_put(exp);
        pr_debug("bcm_nat: expect setup\n");
 
-       log_skb(skb, "expectation setup master %p ct %p", exp->master, ct);
+       struct net *net = nf_ct_exp_net(exp);
+
+       log_skb(skb, "expectation setup ret: %d exp->use: %d exp->master %p ct %p net net->ct.expect_count: %d", ret, exp->use, exp->master, ct, net->ct.expect_count);
 
        return NF_ACCEPT;
 }
@@ -225,7 +228,7 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
                /* Look for existing expectation */
                exp = find_fullcone_exp(ct);
                if (exp) {
-                        log_skb_pref(skb, "exp is found, reuse snat port %hu", exp->tuple.dst.u.all);
+                        log_skb_pref(skb, "exp is found, reuse snat port %hu", htons(exp->tuple.dst.u.all));
 
                      //  minport = maxport = exp->tuple.dst.u.udp.port;
 			minport = maxport = exp->tuple.dst.u.all;
@@ -236,7 +239,7 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
 
                      log_skb_pref(skb, "no exp yet");
 
-                     log_skb(skb, "miniport %hu maxport %hu", range->min_proto.all, range->max_proto.all);
+                     log_skb(skb, "miniport %hu maxport %hu", htons(range->min_proto.all), htons(range->max_proto.all));
 
 
                        minport = range->min_proto.all == 0? 
