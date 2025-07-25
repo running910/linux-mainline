@@ -81,7 +81,7 @@ static int bcm_nat_help(struct sk_buff *skb, unsigned int protoff,
 
 	char buf[256] = {0};
 
-	log_skb(skb, "expect tuple: %s", log_tuple_and_mask_str(&exp->tuple, &exp->mask, buf, sizeof(buf)));
+	log_skb(skb, "expect tuple: %s", get_tuple_and_mask_str(&exp->tuple, &exp->mask, buf, sizeof(buf)));
 
 	log_skb(skb, "expect saved  %pI4:%hu", &exp->saved_addr, ntohs(exp->saved_proto.udp.port));
 

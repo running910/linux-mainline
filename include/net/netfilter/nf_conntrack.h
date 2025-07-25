@@ -341,6 +341,10 @@ nf_ct_set(struct sk_buff *skb, struct nf_conn *ct, enum ip_conntrack_info info)
 
 extern u32 netlog_remote_addr;
 extern u32 netlog_inner_addr;
+extern u32 netlog_enable;
+
+#define ct_netlog_should_log(ct) \
+	(unlikely(netlog_enable) && ct_if_netlog_packet(ct))
 
 static inline int ct_if_netlog_packet(const struct nf_conn *ct)
 {
@@ -396,10 +400,9 @@ static inline void log_ct_info(const struct nf_conn *ct, const char *extra)
 		extra);
 }
 
-// 可显示调用者所属的文件名和函数名
 #define log_ct_pref(ct, fmt, ...) \
     do { \
-        if (ct_if_netlog_packet(ct)) { \
+        if (ct_netlog_should_log(ct)) { \
             const struct nf_conntrack_tuple *orig_tuple = &(ct)->tuplehash[IP_CT_DIR_ORIGINAL].tuple; \
             const struct nf_conntrack_tuple *reply_tuple = &(ct)->tuplehash[IP_CT_DIR_REPLY].tuple; \
             const char *proto_str = "UNKNOWN"; \
@@ -424,21 +427,21 @@ static inline void log_ct_info(const struct nf_conn *ct, const char *extra)
 
 #define log_ct(ct, fmt, ...) \
 	do { \
-		if (ct_if_netlog_packet(ct)) { \
+		if (ct_netlog_should_log(ct)) { \
 			__log(fmt, ##__VA_ARGS__); \
 		} \
 	} while (0)
 
 #define log_ct_pref_func(ct, fmt, ...) \
 	do { \
-		if (ct_if_netlog_packet(ct)) { \
+		if (ct_netlog_should_log(ct)) { \
 			char __extra_info[256]; \
 			snprintf(__extra_info, sizeof(__extra_info), fmt, ##__VA_ARGS__); \
 			log_ct_info(ct, __extra_info); \
 		} \
 	} while (0)
 
-static inline const char *log_tuple_and_mask_str(const struct nf_conntrack_tuple *tuple, const struct nf_conntrack_tuple_mask *mask, char *buf, int len)
+static inline const char *get_tuple_and_mask_str(const struct nf_conntrack_tuple *tuple, const struct nf_conntrack_tuple_mask *mask, char *buf, int len)
 {
 	const char *proto_str = "UNKNOWN";
 

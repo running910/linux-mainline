@@ -771,6 +771,10 @@ void ip_sock_set_tos(struct sock *sk, int val);
 
 extern u32 netlog_remote_addr;
 extern u32 netlog_inner_addr;
+extern u32 netlog_enable;
+
+#define skb_netlog_should_log(skb) \
+	(unlikely(netlog_enable) && skb_if_netlog_packet(skb))
 
 static inline int skb_if_netlog_packet(const struct sk_buff *skb)
 {
@@ -838,7 +842,7 @@ static inline void log_tuple_info(const struct sk_buff *skb, const char *extra)
 
 #define log_skb_pref(skb, fmt, ...) \
 	do { \
-		if (skb_if_netlog_packet(skb)) { \
+		if (skb_netlog_should_log(skb)) { \
 			const struct iphdr *ip_header = ip_hdr(skb); \
 			char proto_str[8] = "UNKNOWN"; \
 			__be16 src_port = 0, dst_port = 0; \
@@ -881,14 +885,14 @@ static inline void log_tuple_info(const struct sk_buff *skb, const char *extra)
 
 #define log_skb(skb, fmt, ...) \
 	do { \
-		if (skb_if_netlog_packet(skb)) { \
+		if (skb_netlog_should_log(skb)) { \
 			__log(fmt, ##__VA_ARGS__); \
 		} \
 	} while (0)
 
 #define log_skb_pref_func(skb, fmt, ...) \
 	do { \
-		if (skb_if_netlog_packet(skb)) { \
+		if (skb_netlog_should_log(skb)) { \
 			char __extra_info[256]; \
 			snprintf(__extra_info, sizeof(__extra_info), fmt, ##__VA_ARGS__); \
 			log_tuple_info(skb, __extra_info); \
