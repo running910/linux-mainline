@@ -127,7 +127,7 @@ static void __init net_debug_init(void)
 {
 	register_sysctl_table(root_table);
 	
-	netlog_enable = true;
+	netlog_enable = false;
 	netlog_remote_addr = in_aton("10.9.8.2");
 	netlog_inner_addr = in_aton("192.168.1.147");
 }

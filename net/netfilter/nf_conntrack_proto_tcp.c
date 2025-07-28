@@ -74,7 +74,7 @@ static const unsigned int tcp_timeouts[TCP_CONNTRACK_TIMEOUT_MAX] = {
 	[TCP_CONNTRACK_CLOSE_WAIT]	= 60 SECS,
 	[TCP_CONNTRACK_LAST_ACK]	= 30 SECS,
 	[TCP_CONNTRACK_TIME_WAIT]	= 2 MINS,
-	[TCP_CONNTRACK_CLOSE]		= 10 SECS,
+	[TCP_CONNTRACK_CLOSE]		= 20 SECS,
 	[TCP_CONNTRACK_SYN_SENT2]	= 2 MINS,
 /* RFC1122 says the R2 limit should be at least 100 seconds.
    Linux uses 15 packets as limit, which corresponds

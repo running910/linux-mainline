@@ -106,7 +106,7 @@ static struct nf_conntrack_expect_policy bcm_nat_exp_policy __read_mostly = {
 
 /****************************************************************************/
 static struct nf_conntrack_helper nf_conntrack_helper_bcm_nat __read_mostly = {
-       .name = "BCM-NAT",
+       .name = "nathole",
        .me = THIS_MODULE,
        .tuple.src.l3num = AF_INET,
        //.tuple.dst.protonum = IPPROTO_UDP,
@@ -276,7 +276,7 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
 
                /* Set ct helper */
                ret = nf_nat_setup_info(ct, &newrange, NF_NAT_MANIP_SRC);
-               if (ret == NF_ACCEPT) {
+               if (ret == NF_ACCEPT && !exp) {
                        struct nf_conn_help *help = nfct_help(ct);
 
 			log_skb(skb, "at this moment help %p", help);
