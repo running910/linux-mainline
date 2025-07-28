@@ -623,6 +623,12 @@ static int exp_seq_show(struct seq_file *s, void *v)
 	print_tuple(s, &expect->tuple,
 		    nf_ct_l4proto_find(expect->tuple.dst.protonum));
 
+#if IS_ENABLED(CONFIG_NF_NAT)
+	seq_printf(s, "inner_ip=%pI4 inner_port=%u ",
+		&expect->saved_addr,
+		ntohs(expect->saved_proto.all));
+#endif
+
 	if (expect->flags & NF_CT_EXPECT_PERMANENT) {
 		seq_puts(s, "PERMANENT");
 		delim = ",";
