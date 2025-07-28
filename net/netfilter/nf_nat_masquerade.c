@@ -12,6 +12,7 @@
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_core.h>
+#include <net/netfilter/nf_masq_nathole.h>
 //#include <net/netfilter/nf_conntrack.h>
 
 static DEFINE_MUTEX(masq_mutex);
@@ -207,8 +208,23 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
 	if (nat)
 		nat->masq_index = out->ifindex;
 
-	log_skb(skb, "nfct_help(ct): %p", nfct_help(ct));
+#if IS_ENABLED(CONFIG_NF_NAT_MASQ_NATHOLE)
 
+	if (newsrc == ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip) {
+		log_skb(skb, "########## it not from inner network!");
+	} else {
+		log_skb(skb, "########## it is from inner network!");
+	}
+
+	if ((newsrc != ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip) &&
+		(nfct_help(ct) == NULL || nfct_help(ct)->helper == NULL) &&
+		(nf_ct_protonum(ct) == IPPROTO_UDP || nf_ct_protonum(ct) == IPPROTO_TCP)) {
+		return do_nathole(skb, ct, range, newsrc);
+	}
+#endif
+
+
+#if 0
 /* RFC 4787 - 4.2.2.  Port Parity
    i.e., an even port will be mapped to an even port, and an odd port will be mapped to an odd port.
 */
@@ -298,7 +314,7 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
 
                return ret;
        }
-
+#endif
 	/* Transfer from original range. */
 	memset(&newrange.min_addr, 0, sizeof(newrange.min_addr));
 	memset(&newrange.max_addr, 0, sizeof(newrange.max_addr));

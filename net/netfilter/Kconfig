@@ -1023,6 +1023,19 @@ config NETFILTER_XT_TARGET_MASQUERADE
 
 	  To compile it as a module, choose M here.  If unsure, say N.
 
+menu "MASQUERADE options"
+	depends on NETFILTER_XT_TARGET_MASQUERADE
+
+config NF_NAT_MASQ_NATHOLE
+	bool "NAT hole punching support" if NETFILTER_XT_TARGET_MASQUERADE != n
+	default y
+	depends on NETFILTER_XT_TARGET_MASQUERADE
+	help
+	  Enable NAT hole punching support for MASQUERADE target.
+	  This is enabled by default but can be disabled here.
+
+endmenu
+
 config NETFILTER_XT_TARGET_TEE
 	tristate '"TEE" - packet cloning to alternate destination'
 	depends on NETFILTER_ADVANCED
