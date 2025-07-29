@@ -12,18 +12,22 @@ static void nathole_expect(struct nf_conn *ct, struct nf_conntrack_expect *exp)
 	/* This must be a fresh one. */
 	BUG_ON(ct->status & IPS_NAT_DONE_MASK);
 
+#if 0
 	/* Change src to where new ct comes from */
 	range.flags = NF_NAT_RANGE_MAP_IPS;
-	range.min_addr = range.max_addr =
-	ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3;
+	range.min_addr = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3;
+	range.max_addr = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3;
 	nf_nat_setup_info(ct, &range, NF_NAT_MANIP_SRC);
 
 	log_ct_pref(ct, "middle ct->master %p", ct->master);
+#endif
 
 	/* For DST manip, map port here to where it's expected. */
 	range.flags = (NF_NAT_RANGE_MAP_IPS | NF_NAT_RANGE_PROTO_SPECIFIED);
-	range.min_proto = range.max_proto = exp->saved_proto;
-	range.min_addr = range.max_addr = exp->saved_addr;
+	range.min_proto = exp->saved_proto;
+	range.max_proto = exp->saved_proto;
+	range.min_addr = exp->saved_addr;
+	range.max_addr = exp->saved_addr;
 	nf_nat_setup_info(ct, &range, NF_NAT_MANIP_DST);
 
 	log_ct_pref(ct, "after ct->master %p", ct->master);
@@ -42,8 +46,8 @@ static int nathole_help(struct sk_buff *skb, unsigned int protoff, struct nf_con
 	if ((dir != IP_CT_DIR_ORIGINAL) || (help->expecting[NF_CT_EXPECT_CLASS_DEFAULT] > 0))
 		return NF_ACCEPT;
 
-	nf_ct_dump_tuple(&ct->tuplehash[dir].tuple);
-	nf_ct_dump_tuple(&ct->tuplehash[!dir].tuple);
+	//nf_ct_dump_tuple(&ct->tuplehash[dir].tuple);
+	//nf_ct_dump_tuple(&ct->tuplehash[!dir].tuple);
 
 	/* Create expect */
 	if ((exp = nf_ct_expect_alloc(ct)) == NULL)
@@ -54,6 +58,7 @@ static int nathole_help(struct sk_buff *skb, unsigned int protoff, struct nf_con
 	nf_ct_expect_init(exp, NF_CT_EXPECT_CLASS_DEFAULT, AF_INET, NULL,
 	&ct->tuplehash[!dir].tuple.dst.u3, ct->tuplehash[dir].tuple.dst.protonum,
 	NULL, &ct->tuplehash[!dir].tuple.dst.u.all);
+
 	exp->flags = NF_CT_EXPECT_PERMANENT;
 	exp->saved_addr = ct->tuplehash[dir].tuple.src.u3;
 	exp->saved_proto.all = ct->tuplehash[dir].tuple.src.u.all;
@@ -73,8 +78,8 @@ static int nathole_help(struct sk_buff *skb, unsigned int protoff, struct nf_con
 }
 
 static struct nf_conntrack_expect_policy nathole_expect_policy __read_mostly = {
-	.max_expected   = 1000,
-	.timeout        = 240,
+	.max_expected   = 10000,
+	.timeout        = 3600,
 };
 
 static struct nf_conntrack_helper nathole_helper __read_mostly = {
