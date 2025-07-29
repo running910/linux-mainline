@@ -629,6 +629,8 @@ static int exp_seq_show(struct seq_file *s, void *v)
 		ntohs(expect->saved_proto.all));
 #endif
 
+	seq_printf(s, "use=%u ", refcount_read(&expect->use));
+
 	if (expect->flags & NF_CT_EXPECT_PERMANENT) {
 		seq_puts(s, "PERMANENT");
 		delim = ",";
