@@ -14,8 +14,7 @@
 
 #define CHECK_PORT_PARITY(a, b) ((a%2)==(b%2))
 
-static void nathole_expect(struct nf_conn *ct,
-                          struct nf_conntrack_expect *exp)
+static void nathole_expect(struct nf_conn *ct, struct nf_conntrack_expect *exp)
 {
 	struct nf_nat_range2 range;
 
@@ -41,24 +40,21 @@ static void nathole_expect(struct nf_conn *ct,
 	log_ct_pref(ct, "after ct->master %p", ct->master);
 }
 
-static int nathole_help(struct sk_buff *skb, unsigned int protoff,
-                       struct nf_conn *ct, enum ip_conntrack_info ctinfo)
+static int nathole_help(struct sk_buff *skb, unsigned int protoff, struct nf_conn *ct, enum ip_conntrack_info ctinfo)
 {
 	int dir = CTINFO2DIR(ctinfo);
 	struct nf_conn_help *help = nfct_help(ct);
 	struct nf_conntrack_expect *exp;
 	int ret;
 	char buf[256] = {0};
+	//struct net *net;
 
-	log_ct(ct, "what is going on dir %d help->expecting[NF_CT_EXPECT_CLASS_DEFAULT] %d", dir, help->expecting[NF_CT_EXPECT_CLASS_DEFAULT]);
+	log_ct(ct, "try to help dir %d help->expecting[NF_CT_EXPECT_CLASS_DEFAULT] %d", dir, help->expecting[NF_CT_EXPECT_CLASS_DEFAULT]);
 
-
-	if (dir != IP_CT_DIR_ORIGINAL || help->expecting[NF_CT_EXPECT_CLASS_DEFAULT])
+	if ((dir != IP_CT_DIR_ORIGINAL) || (help->expecting[NF_CT_EXPECT_CLASS_DEFAULT] > 0))
 		return NF_ACCEPT;
 
-	pr_debug("bcm_nat: packet[%d bytes] ", skb->len);
 	nf_ct_dump_tuple(&ct->tuplehash[dir].tuple);
-	pr_debug("reply: ");
 	nf_ct_dump_tuple(&ct->tuplehash[!dir].tuple);
 
 	/* Create expect */
@@ -77,17 +73,14 @@ static int nathole_help(struct sk_buff *skb, unsigned int protoff,
 	exp->expectfn = nathole_expect;
 
 	log_skb(skb, "expect tuple: %s", get_tuple_and_mask_str(&exp->tuple, &exp->mask, buf, sizeof(buf)));
-
-	log_skb(skb, "expect saved  %pI4:%hu", &exp->saved_addr, ntohs(exp->saved_proto.udp.port));
+	log_skb(skb, "expect saved:  %pI4:%hu", &exp->saved_addr, ntohs(exp->saved_proto.udp.port));
 
 	/* Setup expect */
 	ret = nf_ct_expect_related(exp, 0);
 	nf_ct_expect_put(exp);
-	pr_debug("bcm_nat: expect setup\n");
 
-	struct net *net = nf_ct_exp_net(exp);
-
-	log_skb(skb, "expectation setup ret: %d exp->use: %d exp->master %p ct %p net net->ct.expect_count: %d", ret, exp->use, exp->master, ct, net->ct.expect_count);
+	//net = ;
+	log_skb(skb, "expectation setup ret: %d exp->use: %d exp->master %p ct %p net->ct.expect_count: %d", ret, exp->use, exp->master, ct, nf_ct_exp_net(exp)->ct.expect_count);
 
 	return NF_ACCEPT;
 }
@@ -97,7 +90,7 @@ static struct nf_conntrack_expect_policy nathole_expect_policy __read_mostly = {
 	.timeout        = 240,
 };
 
-static struct nf_conntrack_helper nf_conntrack_helper_bcm_nat __read_mostly = {
+static struct nf_conntrack_helper nathole_helper __read_mostly = {
 	.name = "nathole",
 	.me = THIS_MODULE,
 	.tuple.src.l3num = AF_INET,
@@ -113,13 +106,11 @@ static inline int find_expect_by_mapped(__be32 ip, __be16 port, struct nf_conn *
 	struct nf_conntrack_tuple tuple;
 	struct nf_conntrack_expect *i = NULL;
 
-
 	memset(&tuple, 0, sizeof(tuple));
 	tuple.src.l3num = AF_INET;
 	//tuple.dst.protonum = IPPROTO_UDP;
 	tuple.dst.protonum = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum;
 	tuple.dst.u3.ip = ip;
-	// tuple.dst.u.udp.port = port;
 	tuple.dst.u.all = port;
 
 	log_ct(ct, "happens to be tuple.dst.u.udp.port:%d tuple.dst.protonum:%d", tuple.dst.u.udp.port, tuple.dst.protonum);
@@ -166,8 +157,6 @@ unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const struct nf
 	struct nf_conntrack_expect *exp;
 	struct nf_nat_range2 newrange;
 
-	pr_debug("bcm_nat: need full cone NAT\n");
-
 	/* Choose port */
 	spin_lock_bh(&nf_conntrack_expect_lock);
 	/* Look for existing expectation */
@@ -177,8 +166,6 @@ unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const struct nf
 
 		//  minport = maxport = exp->tuple.dst.u.udp.port;
 		minport = maxport = exp->tuple.dst.u.all;
-		pr_debug("bcm_nat: existing mapped port = %hu\n",
-			ntohs(minport));
 	} else { /* no previous expect */
 		u_int16_t newport, tmpport, orgport;
 
@@ -197,8 +184,8 @@ unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const struct nf
 		for (newport = ntohs(minport),tmpport = ntohs(maxport); 
 			newport <= tmpport; newport++) {
 			if (CHECK_PORT_PARITY(orgport, newport) && !find_expect_by_mapped(newsrc, htons(newport), ct)) {
-				pr_debug("bcm_nat: new mapped port = "
-					"%hu\n", newport);
+
+				log_skb_pref(skb, "new snat port has been finalized %hu", newport);
 				minport = maxport = htons(newport);
 				break;
 			}
@@ -210,8 +197,7 @@ unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const struct nf
 	memset(&newrange.min_addr, 0, sizeof(newrange.min_addr));
 	memset(&newrange.max_addr, 0, sizeof(newrange.max_addr));
 
-	newrange.flags = range->flags | NF_NAT_RANGE_MAP_IPS |
-		NF_NAT_RANGE_PROTO_SPECIFIED;
+	newrange.flags = range->flags | NF_NAT_RANGE_MAP_IPS | NF_NAT_RANGE_PROTO_SPECIFIED;
 	newrange.max_addr.ip = newrange.min_addr.ip = newsrc;
 	newrange.min_proto.udp.port = newrange.max_proto.udp.port = minport;
 
@@ -229,10 +215,8 @@ unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const struct nf
 			log_skb(skb, "now nf_ct_helper_ext_add");
 		}
 		if (help != NULL) {
-			help->helper = &nf_conntrack_helper_bcm_nat;
-			pr_debug("bcm_nat: helper set\n");
-
-			log_skb(skb, "add helper");
+			help->helper = &nathole_helper;
+			log_skb_pref(skb, "add helper");
 
 		}
 	}

@@ -49,10 +49,12 @@ static void bcm_nat_expect(struct nf_conn *ct,
 static int bcm_nat_help(struct sk_buff *skb, unsigned int protoff,
                        struct nf_conn *ct, enum ip_conntrack_info ctinfo)
 {
-       int dir = CTINFO2DIR(ctinfo);
-       struct nf_conn_help *help = nfct_help(ct);
-       struct nf_conntrack_expect *exp;
-       int ret;
+	int dir = CTINFO2DIR(ctinfo);
+	struct nf_conn_help *help = nfct_help(ct);
+	struct nf_conntrack_expect *exp;
+	int ret;
+	char buf[256] = {0};
+
 
 	log_ct(ct, "what is going on dir %d help->expecting[NF_CT_EXPECT_CLASS_DEFAULT] %d", dir, help->expecting[NF_CT_EXPECT_CLASS_DEFAULT]);
 
@@ -81,7 +83,6 @@ static int bcm_nat_help(struct sk_buff *skb, unsigned int protoff,
        exp->dir = !dir;
        exp->expectfn = bcm_nat_expect;
 
-	char buf[256] = {0};
 
 	log_skb(skb, "expect tuple: %s", get_tuple_and_mask_str(&exp->tuple, &exp->mask, buf, sizeof(buf)));
 
