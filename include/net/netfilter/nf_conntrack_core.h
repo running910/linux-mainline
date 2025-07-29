@@ -73,7 +73,7 @@ static inline int nf_conntrack_confirm(struct sk_buff *skb)
 	}
 
 	if (ct)
-		log_skb(skb, "after all this ct state 0x%x", ct->status);
+		log_skb(skb, "after all this ct state 0x%lx", ct->status);
 
 	return ret;
 }
