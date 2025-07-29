@@ -1650,11 +1650,11 @@ init_conntrack(struct net *net, struct nf_conn *tmpl,
 	local_bh_enable();
 
 	if (exp) {
-		log_ct(ct, "before exp->use %d", exp->use);
+		log_ct(ct, "before exp->use %d", exp->use.refs.counter);
 		if (exp->expectfn)
 			exp->expectfn(ct, exp);
 		nf_ct_expect_put(exp);
-		log_ct(ct, "after exp->use %d", exp->use);
+		log_ct(ct, "after exp->use %d", exp->use.refs.counter);
 	}
 
 	log_ct(ct, "ct->master %p", ct->master);

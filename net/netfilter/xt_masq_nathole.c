@@ -168,7 +168,18 @@ static inline u_int16_t select_new_port(struct sk_buff *skb, struct nf_conn *ct,
 	return newport <= maxport ? htons(newport) : 0;
 }
 
-unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const struct nf_nat_range2 *range, __be32 newsrc)
+inline bool check_if_need_nathole(struct nf_conn *ct, __be32 newsrc)
+{
+	if ((newsrc != ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip) &&
+		(nfct_help(ct) == NULL || nfct_help(ct)->helper == NULL) &&
+		(nf_ct_protonum(ct) == IPPROTO_UDP || nf_ct_protonum(ct) == IPPROTO_TCP)) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+inline unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const struct nf_nat_range2 *range, __be32 newsrc)
 {
 	unsigned int ret;
 	u_int16_t newport;

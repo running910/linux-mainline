@@ -9,11 +9,7 @@
 #include <linux/inet.h>
 
 #include <net/netfilter/nf_nat_masquerade.h>
-#include <net/netfilter/nf_conntrack_zones.h>
-#include <net/netfilter/nf_conntrack_helper.h>
-#include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/nf_masq_nathole.h>
-//#include <net/netfilter/nf_conntrack.h>
 
 static DEFINE_MUTEX(masq_mutex);
 static unsigned int masq_refcnt __read_mostly;
@@ -67,11 +63,8 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
 		log_skb(skb, "########## it is from inner network!");
 	}
 
-	if ((newsrc != ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip) &&
-		(nfct_help(ct) == NULL || nfct_help(ct)->helper == NULL) &&
-		(nf_ct_protonum(ct) == IPPROTO_UDP || nf_ct_protonum(ct) == IPPROTO_TCP)) {
+	if (check_if_need_nathole(ct, newsrc))
 		return do_nathole(skb, ct, range, newsrc);
-	}
 #endif
 
 	/* Transfer from original range. */
