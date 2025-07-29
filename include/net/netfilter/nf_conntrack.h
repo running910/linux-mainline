@@ -374,6 +374,7 @@ static inline int ct_if_netlog_packet(const struct nf_conn *ct)
 	return 0;
 }
 
+// implemented with reference to the function nf_ct_dump_tuple_ip
 static inline void log_ct_info(const struct nf_conn *ct, const char *extra)
 {
 	const struct nf_conntrack_tuple *orig_tuple, *reply_tuple;
