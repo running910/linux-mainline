@@ -225,3 +225,8 @@ unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const struct nf
 
 	return ret;
 }
+
+void nathole_exit(void)
+{
+	nf_conntrack_helper_unregister(&nathole_helper);
+}
