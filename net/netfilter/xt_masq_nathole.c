@@ -78,7 +78,11 @@ static int nathole_help(struct sk_buff *skb, unsigned int protoff, struct nf_con
 }
 
 static struct nf_conntrack_expect_policy nathole_expect_policy __read_mostly = {
-	.max_expected   = 10000,
+	// 限定对应ct的NF_CT_EXPECT_CLASS_DEFAULT类的expectation数量，只需要一个
+	.max_expected   = 1,
+
+	// 限定对应ct的NF_CT_EXPECT_CLASS_DEFAULT类的expectation生存时间，在这里尽量
+	// 设置足够大，并且对应的master ct释放后会自动释放
 	.timeout        = 3600,
 };
 
