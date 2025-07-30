@@ -3,6 +3,33 @@
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_core.h>
 
+
+static int nathole_help(struct sk_buff *skb, unsigned int protoff, struct nf_conn *ct, enum ip_conntrack_info ctinfo);
+
+
+static struct nf_conntrack_expect_policy nathole_expect_policy __read_mostly = {
+	// 限定对应ct的NF_CT_EXPECT_CLASS_DEFAULT类的expectation数量
+	// 只需要一个(最多可设置NF_CT_EXPECT_MAX_CNT个)
+	.max_expected   = 1,
+
+	// 限定对应ct的NF_CT_EXPECT_CLASS_DEFAULT类的expectation生存时间，在这里尽量
+	// 设置足够大，并且对应的master ct释放后会自动释放
+	.timeout        = 3600,
+};
+
+static struct nf_conntrack_helper nathole_helper __read_mostly = {
+	.name = "nathole",
+	.me = THIS_MODULE,
+	.tuple.src.l3num = AF_INET,
+	.expect_policy = &nathole_expect_policy,
+
+	// 限制对应ct的expect的class类的最大数量
+	// 只需要一个（最多可设置NF_CT_MAX_EXPECT_CLASSES个）
+	.expect_class_max = 1,
+	.help = nathole_help,
+};
+
+
 static void nathole_expect(struct nf_conn *ct, struct nf_conntrack_expect *exp)
 {
 	struct nf_nat_range2 range;
@@ -86,25 +113,8 @@ static int nathole_help(struct sk_buff *skb, unsigned int protoff, struct nf_con
 	return NF_ACCEPT;
 }
 
-static struct nf_conntrack_expect_policy nathole_expect_policy __read_mostly = {
-	// 限定对应ct的NF_CT_EXPECT_CLASS_DEFAULT类的expectation数量，只需要一个
-	.max_expected   = 1,
 
-	// 限定对应ct的NF_CT_EXPECT_CLASS_DEFAULT类的expectation生存时间，在这里尽量
-	// 设置足够大，并且对应的master ct释放后会自动释放
-	.timeout        = 3600,
-};
-
-static struct nf_conntrack_helper nathole_helper __read_mostly = {
-	.name = "nathole",
-	.me = THIS_MODULE,
-	.tuple.src.l3num = AF_INET,
-	.expect_policy = &nathole_expect_policy,
-	.expect_class_max = 1,
-	.help = nathole_help,
-};
-
-/****************************************************************************/
+// 新的由inner网络的五元组发出第一个包，查看映射后的地址端口是否已经有对应的expectation
 static inline int find_expect_by_mapped(__be32 ip, __be16 port, struct nf_conn *ct)
 {
 	struct nf_conntrack_tuple tuple;
@@ -125,7 +135,7 @@ static inline int find_expect_by_mapped(__be32 ip, __be16 port, struct nf_conn *
 	return i != NULL;
 }
 
-/****************************************************************************/
+// 新的由inner网络的五元组发出第一个包，寻找该src地址端口是否已经有对应的expectation
 static inline struct nf_conntrack_expect *find_expect_by_unmapped(struct nf_conn *ct)
 {
 	struct nf_conntrack_tuple * tp =
