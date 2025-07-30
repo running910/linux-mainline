@@ -12,6 +12,8 @@ static void nathole_expect(struct nf_conn *ct, struct nf_conntrack_expect *exp)
 	/* This must be a fresh one. */
 	BUG_ON(ct->status & IPS_NAT_DONE_MASK);
 
+	// expect的连接original方向的都是远端过来的，这里
+	// 应该是没有必要变更其src地址端口
 #if 0
 	/* Change src to where new ct comes from */
 	range.flags = NF_NAT_RANGE_MAP_IPS;
@@ -22,6 +24,7 @@ static void nathole_expect(struct nf_conn *ct, struct nf_conntrack_expect *exp)
 	log_ct_pref(ct, "middle ct->master %p", ct->master);
 #endif
 
+	// expect的连接dst地址端口要变更为master ct的original方向的src地址端口
 	/* For DST manip, map port here to where it's expected. */
 	range.flags = (NF_NAT_RANGE_MAP_IPS | NF_NAT_RANGE_PROTO_SPECIFIED);
 	range.min_proto = exp->saved_proto;
@@ -68,7 +71,7 @@ static int nathole_help(struct sk_buff *skb, unsigned int protoff, struct nf_con
 	// 预期连接是主动连进来的新的ct第一个包，所以dir应该也是original方向
 	// 但实际上dir未参与匹配逻辑，不设置亦可
 	// exp->dir = dir;
-	
+
 	exp->expectfn = nathole_expect;
 
 	log_skb(skb, "expect tuple: %s", get_tuple_and_mask_str(&exp->tuple, &exp->mask, buf, sizeof(buf)));
@@ -155,8 +158,7 @@ static inline u_int16_t select_new_port(struct sk_buff *skb, struct nf_conn *ct,
 
 	u_int16_t minport, maxport, orgport;
 
-
-	log_skb(skb, "configed port range minport %hu maxport %hu", htons(range->min_proto.all), htons(range->max_proto.all));
+	log_skb(skb, "configed port range minport %hu maxport %hu", ntohs(range->min_proto.all), ntohs(range->max_proto.all));
 
 	// if a port range is configured, select port within the configured range, 
 	// otherwise use the original port as the starting port
@@ -209,7 +211,7 @@ inline unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const st
 		newport = exp->tuple.dst.u.all;
 	} else {
 
-		log_skb_pref(skb, "no expectation is found!");
+		log_skb_pref(skb, "no expectation is found! select a new snat port!");
 
 		newport = select_new_port(skb, ct, range, newsrc);
 		if (unlikely(newport == 0)) {
