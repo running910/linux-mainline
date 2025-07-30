@@ -55,14 +55,20 @@ static int nathole_help(struct sk_buff *skb, unsigned int protoff, struct nf_con
 
 	log_skb(skb, "expect proto %d", ct->tuplehash[dir].tuple.dst.protonum);
 
-	nf_ct_expect_init(exp, NF_CT_EXPECT_CLASS_DEFAULT, AF_INET, NULL,
-	&ct->tuplehash[!dir].tuple.dst.u3, ct->tuplehash[dir].tuple.dst.protonum,
-	NULL, &ct->tuplehash[!dir].tuple.dst.u.all);
+	nf_ct_expect_init(exp, NF_CT_EXPECT_CLASS_DEFAULT, AF_INET, NULL, &ct->tuplehash[!dir].tuple.dst.u3, 
+		ct->tuplehash[dir].tuple.dst.protonum, NULL, &ct->tuplehash[!dir].tuple.dst.u.all);
 
+	// 永久有效，标识不限连接数量
 	exp->flags = NF_CT_EXPECT_PERMANENT;
+
+	// 保存的是original方向的src地址端口
 	exp->saved_addr = ct->tuplehash[dir].tuple.src.u3;
-	exp->saved_proto.all = ct->tuplehash[dir].tuple.src.u.all;
-	exp->dir = !dir;
+	exp->saved_proto.all = ct->tuplehash[dir].tuple.src.u.all; 
+
+	// 预期连接是主动连进来的新的ct第一个包，所以dir应该也是original方向
+	// 但实际上dir未参与匹配逻辑，不设置亦可
+	// exp->dir = dir;
+	
 	exp->expectfn = nathole_expect;
 
 	log_skb(skb, "expect tuple: %s", get_tuple_and_mask_str(&exp->tuple, &exp->mask, buf, sizeof(buf)));
