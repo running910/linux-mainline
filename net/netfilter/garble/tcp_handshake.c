@@ -52,7 +52,9 @@ typedef struct tcp_tuple_type {
 	__be16 dport;
 } tcp_tuple_t;
 
-unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
+inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
+
+inline unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
 
 tcp_tuple_t *extract_tuple_info(struct sk_buff *skb, tcp_tuple_t *tuple)
 {
@@ -329,9 +331,22 @@ static bool check_local_traffic_v6(struct in6_addr *sip, struct in6_addr *dip)
 void response_tls_client_hello(struct sk_buff *skb, const struct sock *sk)
 {
 	tcp_tuple_t tuple;
+	int mode;
 
-	if (!garble_check_if_enabled())
+	log_skb(skb, "helloooooooooooooo");
+
+	if (garble_check_if_double_enabled()) {
+		mode = prandom_u32() % 2;
+	} else if (garble_check_if_tls_enabled()) {
+		mode = 1;
+	} else if (garble_check_if_http_enabled()) {
+		mode = 0;
+	// garble_check_if_enabled() must be true
+	} else {
 		return;
+	}
+
+	log_skb(skb, "helloooooooooooooo moddddd %d", mode);
 
 	if (!skb || !sk)
 		return;
@@ -349,12 +364,16 @@ void response_tls_client_hello(struct sk_buff *skb, const struct sock *sk)
 	unsigned char payload[512];
 	int payload_len;
 
-	//__log("**** build tls starts ******");
+	if (mode) {
+		if (!build_tls_client_hello(payload, &payload_len, sni))
+			return;
+	} else {
+		payload_len = sizeof(payload);
+		if (!build_http_request(payload, &payload_len, sni))
+			return;
+	}
 
-	if (!build_tls_client_hello(payload, &payload_len, sni))
-		return;
-
-	//__log("**** build tls success ******");
+	__log("**** build tls success ******");
 
 	generate_and_send_packet(&tuple, sk, skb, payload, payload_len);
 }

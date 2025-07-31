@@ -19,6 +19,7 @@ struct garble_config {
 
 static int garble_enabled = 0;
 static char garble_args[DOMAINS_BUF_LEN] = "";
+static int garble_http_enabled = 0;
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
 
@@ -89,11 +90,18 @@ static int proc_handler_domains(struct ctl_table *table, int write,
 
 static struct ctl_table garble_table[] = {
         {
-        .procname   = "enable",
-        .data       = &garble_enabled,
-        .maxlen     = sizeof(int),
-        .mode       = 0644,
-        .proc_handler = proc_dointvec,
+		.procname   = "enable",
+		.data       = &garble_enabled,
+		.maxlen     = sizeof(int),
+		.mode       = 0644,
+		.proc_handler = proc_dointvec,
+        },
+	{
+		.procname   = "enable_http",
+		.data       = &garble_http_enabled,
+		.maxlen     = sizeof(int),
+		.mode       = 0644,
+		.proc_handler = proc_dointvec,
         },
         {
                 .procname   = "domains",
@@ -155,12 +163,27 @@ void garble_sysctl_exit(void)
 		call_rcu(&cfg->rcu, garble_config_free);
 }
 
-bool garble_check_if_enabled(void)
+inline bool garble_check_if_enabled(void)
+{
+	return garble_enabled || garble_http_enabled;
+}
+
+inline bool garble_check_if_double_enabled(void)
+{
+	return garble_enabled && garble_http_enabled;
+}
+
+inline bool garble_check_if_tls_enabled(void)
 {
 	return garble_enabled;
 }
 
-const char *garble_get_random_domain(void)
+inline bool garble_check_if_http_enabled(void)
+{
+	return garble_http_enabled;
+}
+
+inline const char *garble_get_random_domain(void)
 {
 	const char *domain = NULL;
 	struct garble_config *cfg;

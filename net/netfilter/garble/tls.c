@@ -2,7 +2,7 @@
 #include <linux/random.h>
 
 
-unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni)
+inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni)
 {
 	int offset = 0;
 
