@@ -5,6 +5,10 @@
 
 #include "running910_netlog.h"
 
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
+MODULE_DESCRIPTION("Xtables: automatic-address SNAT with nathole enabled");
+
 
 static int nathole_help(struct sk_buff *skb, unsigned int protoff, struct nf_conn *ct, enum ip_conntrack_info ctinfo);
 
