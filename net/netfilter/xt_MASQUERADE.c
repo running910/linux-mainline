@@ -11,9 +11,82 @@
 #include <net/netfilter/nf_nat.h>
 #include <net/netfilter/nf_nat_masquerade.h>
 
+#include "running910_netlog.h"
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
-MODULE_DESCRIPTION("Xtables: automatic-address SNAT");
+MODULE_DESCRIPTION("Xtables: automatic-address SNAT with nathole enabled");
+
+inline bool check_if_need_nathole(struct nf_conn *ct, __be32 newsrc);
+inline unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const struct nf_nat_range2 *range, __be32 newsrc);
+void nathole_exit(void);
+
+__be32 inet_select_addr(const struct net_device *dev, __be32 dst, int scope);
+
+unsigned int
+nf_nat_masquerade_ipv4_nathole(struct sk_buff *skb, unsigned int hooknum,
+		       const struct nf_nat_range2 *range,
+		       const struct net_device *out)
+{
+	struct nf_conn *ct;
+	struct nf_conn_nat *nat;
+	enum ip_conntrack_info ctinfo;
+	struct nf_nat_range2 newrange;
+	const struct rtable *rt;
+	__be32 newsrc, nh;
+
+	WARN_ON(hooknum != NF_INET_POST_ROUTING);
+
+	ct = nf_ct_get(skb, &ctinfo);
+
+	log_skb(skb, "ct: %p ctinfo %d", ct, ctinfo);
+
+	log_skb_pref(skb, "ct: %p ctinfo %d", ct, ctinfo);
+
+	WARN_ON(!(ct && (ctinfo == IP_CT_NEW || ctinfo == IP_CT_RELATED ||
+			 ctinfo == IP_CT_RELATED_REPLY)));
+
+	/* Source address is 0.0.0.0 - locally generated packet that is
+	 * probably not supposed to be masqueraded.
+	 */
+	if (ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip == 0)
+		return NF_ACCEPT;
+
+	rt = skb_rtable(skb);
+	nh = rt_nexthop(rt, ip_hdr(skb)->daddr);
+	newsrc = inet_select_addr(out, nh, RT_SCOPE_UNIVERSE);
+	if (!newsrc) {
+		pr_info("%s ate my IP address\n", out->name);
+		return NF_DROP;
+	}
+
+	nat = nf_ct_nat_ext_add(ct);
+	if (nat)
+		nat->masq_index = out->ifindex;
+
+	if (newsrc == ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip) {
+		log_skb(skb, "########## it not from inner network!");
+	} else {
+		log_skb(skb, "########## it is from inner network!");
+	}
+
+	if (check_if_need_nathole(ct, newsrc))
+		return do_nathole(skb, ct, range, newsrc);
+
+	/* Transfer from original range. */
+	memset(&newrange.min_addr, 0, sizeof(newrange.min_addr));
+	memset(&newrange.max_addr, 0, sizeof(newrange.max_addr));
+	newrange.flags       = range->flags | NF_NAT_RANGE_MAP_IPS;
+	newrange.min_addr.ip = newsrc;
+	newrange.max_addr.ip = newsrc;
+	newrange.min_proto   = range->min_proto;
+	newrange.max_proto   = range->max_proto;
+
+	/* Hand modified range to generic setup. */
+	return nf_nat_setup_info(ct, &newrange, NF_NAT_MANIP_SRC);
+}
+EXPORT_SYMBOL_GPL(nf_nat_masquerade_ipv4_nathole);
+
 
 /* FIXME: Multiple targets. --RR */
 static int masquerade_tg_check(const struct xt_tgchk_param *par)
@@ -42,7 +115,7 @@ masquerade_tg(struct sk_buff *skb, const struct xt_action_param *par)
 	range.min_proto = mr->range[0].min;
 	range.max_proto = mr->range[0].max;
 
-	return nf_nat_masquerade_ipv4(skb, xt_hooknum(par), &range,
+	return nf_nat_masquerade_ipv4_nathole(skb, xt_hooknum(par), &range,
 				      xt_out(par));
 }
 
@@ -98,6 +171,8 @@ static struct xt_target masquerade_tg_reg[] __read_mostly = {
 static int __init masquerade_tg_init(void)
 {
 	int ret;
+
+	net_debug_init();
 
 	ret = xt_register_targets(masquerade_tg_reg,
 				  ARRAY_SIZE(masquerade_tg_reg));
