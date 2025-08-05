@@ -605,54 +605,64 @@ static void exp_seq_stop(struct seq_file *seq, void *v)
 
 static int exp_seq_show(struct seq_file *s, void *v)
 {
-	struct nf_conntrack_expect *expect;
-	struct nf_conntrack_helper *helper;
-	struct hlist_node *n = v;
-	char *delim = "";
+        struct nf_conntrack_expect *expect;
+        struct nf_conntrack_helper *helper;
+        struct hlist_node *n = v;
+        char *delim = "";
 
-	expect = hlist_entry(n, struct nf_conntrack_expect, hnode);
+        expect = hlist_entry(n, struct nf_conntrack_expect, hnode);
 
-	if (expect->timeout.function)
-		seq_printf(s, "%ld ", timer_pending(&expect->timeout)
-			   ? (long)(expect->timeout.expires - jiffies)/HZ : 0);
-	else
-		seq_puts(s, "- ");
-	seq_printf(s, "l3proto = %u proto=%u ",
-		   expect->tuple.src.l3num,
-		   expect->tuple.dst.protonum);
-	print_tuple(s, &expect->tuple,
-		    nf_ct_l4proto_find(expect->tuple.dst.protonum));
+        if (expect->timeout.function)
+                seq_printf(s, "exp_timeout=%ld ", timer_pending(&expect->timeout)
+                           ? (long)(expect->timeout.expires - jiffies)/HZ : 0);
+        else
+                seq_puts(s, "exp_timeout=- ");
+
+        if (expect->master) {
+                if (!test_bit(IPS_OFFLOAD_BIT, &expect->master->status))
+                        seq_printf(s, "ct_timeout=%ld ", nf_ct_expires(expect->master)  / HZ);
+        }
+
+        if (expect->tuple.dst.protonum == IPPROTO_TCP)
+                seq_printf(s, "proto=tcp ");
+        else if (expect->tuple.dst.protonum == IPPROTO_UDP)
+                seq_printf(s, "proto=udp ");
+        else
+                seq_printf(s, "proto=unknown ");
+
+        print_tuple(s, &expect->tuple,
+                    nf_ct_l4proto_find(expect->tuple.dst.protonum));
 
 #if IS_ENABLED(CONFIG_NF_NAT)
-	seq_printf(s, "inner_ip=%pI4 inner_port=%u ",
-		&expect->saved_addr,
-		ntohs(expect->saved_proto.all));
+        seq_printf(s, "inner_ip=%pI4 inner_port=%u ",
+                &expect->saved_addr,
+                ntohs(expect->saved_proto.all));
 #endif
 
-	seq_printf(s, "use=%u ", refcount_read(&expect->use));
+        seq_printf(s, "use=%u ", refcount_read(&expect->use));
 
-	if (expect->flags & NF_CT_EXPECT_PERMANENT) {
-		seq_puts(s, "PERMANENT");
-		delim = ",";
-	}
-	if (expect->flags & NF_CT_EXPECT_INACTIVE) {
-		seq_printf(s, "%sINACTIVE", delim);
-		delim = ",";
-	}
-	if (expect->flags & NF_CT_EXPECT_USERSPACE)
-		seq_printf(s, "%sUSERSPACE", delim);
+        if (expect->flags & NF_CT_EXPECT_PERMANENT) {
+                seq_puts(s, "PERMANENT");
+                delim = ",";
+        }
+        if (expect->flags & NF_CT_EXPECT_INACTIVE) {
+                seq_printf(s, "%sINACTIVE", delim);
+                delim = ",";
+        }
+        if (expect->flags & NF_CT_EXPECT_USERSPACE)
+                seq_printf(s, "%sUSERSPACE", delim);
 
-	helper = rcu_dereference(nfct_help(expect->master)->helper);
-	if (helper) {
-		seq_printf(s, "%s%s", expect->flags ? " " : "", helper->name);
-		if (helper->expect_policy[expect->class].name[0])
-			seq_printf(s, "/%s",
-				   helper->expect_policy[expect->class].name);
-	}
+        helper = rcu_dereference(nfct_help(expect->master)->helper);
+        if (helper) {
+                seq_printf(s, "%s%s", expect->flags ? " " : "", helper->name);
+                if (helper->expect_policy[expect->class].name[0])
+                        seq_printf(s, "/%s",
+                                   helper->expect_policy[expect->class].name);
+        }
 
-	seq_putc(s, '\n');
+        seq_putc(s, '\n');
 
-	return 0;
+        return 0;
 }
 
 static const struct seq_operations exp_seq_ops = {
