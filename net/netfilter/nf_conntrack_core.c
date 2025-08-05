@@ -52,6 +52,7 @@
 #include <net/netfilter/nf_nat_helper.h>
 #include <net/netns/hash.h>
 #include <net/ip.h>
+#include <net/netfilter/nf_garble.h>
 
 #include "nf_internals.h"
 
@@ -1690,6 +1691,9 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	hash = hash_conntrack_raw(&tuple, state->net);
 	h = __nf_conntrack_find_get(state->net, zone, &tuple, hash);
 	if (!h) {
+
+		garble_insert_udp_packet(skb);
+
 		log_skb_pref(skb, "ct was not found from nf_conntrack_hash");
 		h = init_conntrack(state->net, tmpl, &tuple,
 				   skb, dataoff, hash);
