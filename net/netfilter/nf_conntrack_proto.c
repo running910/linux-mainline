@@ -198,6 +198,7 @@ static unsigned int ipv4_conntrack_local(void *priv,
 					 struct sk_buff *skb,
 					 const struct nf_hook_state *state)
 {
+	log_skb(skb, "######## skb 0x%p cb[47] 0x%x", skb, (u8)skb->cb[47]);
 	if (ip_is_fragment(ip_hdr(skb))) { /* IP_NODEFRAG setsockopt set */
 		enum ip_conntrack_info ctinfo;
 		struct nf_conn *tmpl;
@@ -210,6 +211,11 @@ static unsigned int ipv4_conntrack_local(void *priv,
 			skb->_nfct = 0;
 			nf_ct_put(tmpl);
 		}
+		return NF_ACCEPT;
+	}
+
+	if (skb->cb[47] == 147) {
+		log_skb_pref(skb, "fake udp packet, ignore!");
 		return NF_ACCEPT;
 	}
 
@@ -411,6 +417,10 @@ static unsigned int ipv6_conntrack_local(void *priv,
 					 struct sk_buff *skb,
 					 const struct nf_hook_state *state)
 {
+	if (skb->cb[47] == 147) {
+		log_skb_pref(skb, "fake ipv6 udp packet, ignore!");
+		return NF_ACCEPT;
+	}
 	return nf_conntrack_in(skb, state);
 }
 

@@ -1678,6 +1678,7 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	struct nf_conntrack_zone tmp;
 	struct nf_conn *ct;
 	u32 hash;
+	struct iphdr *iph;
 
 	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
 			     dataoff, state->pf, protonum, state->net,
@@ -1692,7 +1693,10 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	h = __nf_conntrack_find_get(state->net, zone, &tuple, hash);
 	if (!h) {
 
-		garble_insert_udp_packet(skb);
+		iph = ip_hdr(skb);
+		if (iph && (iph->protocol == IPPROTO_UDP)) {
+			garble_insert_udp_packet(skb);
+		}
 
 		log_skb_pref(skb, "ct was not found from nf_conntrack_hash");
 		h = init_conntrack(state->net, tmpl, &tuple,
@@ -1823,6 +1827,11 @@ nf_conntrack_in(struct sk_buff *skb, const struct nf_hook_state *state)
 	struct nf_conn *ct, *tmpl;
 	u_int8_t protonum;
 	int dataoff, ret;
+
+	if (skb->cb[47] == 147) {
+		log_skb_pref(skb, "fake udp packet, ignore!");
+		return NF_ACCEPT;
+	}
 
 	tmpl = nf_ct_get(skb, &ctinfo);
 

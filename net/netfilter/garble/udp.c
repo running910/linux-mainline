@@ -31,7 +31,7 @@ struct sk_buff *generate_and_send_udp_packet(struct sk_buff *skb, char *payload,
 
 	log_tuple_info(skb, "nothing.....");
 
-	__log("mark");
+	//__log("mark");
 
 	//log_skb(skb, "mark");
 
@@ -41,25 +41,25 @@ struct sk_buff *generate_and_send_udp_packet(struct sk_buff *skb, char *payload,
 	if (!iph) {
 		return NULL;
 	}
-	__log("mark");
+	//__log("mark");
 
 	/* Check if this is an IPv4 packet */
 	if (iph->version != 4) {
 		return NULL;
 	}
-	__log("mark");
+	//__log("mark");
 
 	/* Get UDP header from original skb */
 	if (iph->protocol != IPPROTO_UDP) {
 		return NULL;
 	}
-		__log("mark");
+	//	__log("mark");
 
 	udph = udp_hdr(skb);
 	if (!udph) {
 		return NULL;
 	}
-	__log("mark devvvv 0x%p", skb->dev);
+	//__log("mark devvvv 0x%p", skb->dev);
 
 	if (!skb->sk) {
 		return NULL;
@@ -70,22 +70,22 @@ struct sk_buff *generate_and_send_udp_packet(struct sk_buff *skb, char *payload,
 	if (!net)
 		return NULL;
 
-	__log("markkkkkkmark skb->sk 0x%p", skb->sk);
+	//__log("great markkkkkkmark skb->sk 0x%p", skb->sk);
 
 	ip_hdr_len = iph->ihl * 4;
 	total_len = ip_hdr_len + udp_hdr_len + payload_len;
 //	net = dev_net(skb->dev);
-	__log("mark");
+	//__log("mark");
 	/* Allocate new skb */
 	new_skb = alloc_skb(total_len + LL_MAX_HEADER, GFP_ATOMIC);
 	if (!new_skb) {
 		return NULL;
 	}
-	__log("mark");
+	//__log("mark");
 	/* Reserve space for link layer header */
 	skb_reserve(new_skb, LL_MAX_HEADER);
 	skb_reset_network_header(new_skb);
-	__log("mark");
+	//__log("mark");
 	/* Add IP header space */
 	new_iph = (struct iphdr *)skb_put(new_skb, ip_hdr_len);
 	
@@ -150,6 +150,10 @@ struct sk_buff *generate_and_send_udp_packet(struct sk_buff *skb, char *payload,
 
 	skb_dst_set(new_skb, &rt->dst);
 
+	new_skb->cb[47] = 147;
+
+	log_skb(skb, "new packet skb %p", new_skb);
+
 	/* Send packet */
 	ret = ip_local_out(net, NULL, new_skb);
 	if (ret < 0) {
@@ -158,9 +162,4 @@ struct sk_buff *generate_and_send_udp_packet(struct sk_buff *skb, char *payload,
 	}
 
 	return new_skb;
-}
-
-void garble_insert_udp_packet(struct sk_buff *skb)
-{
-	generate_and_send_udp_packet(skb, "world", strlen("world"));
 }
