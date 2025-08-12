@@ -36,6 +36,7 @@
 #include <net/netfilter/nf_nat_helper.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
 #include <net/netfilter/ipv6/nf_defrag_ipv6.h>
+#include <net/netfilter/nf_garble.h>
 
 #include <linux/ipv6.h>
 #include <linux/in6.h>
@@ -168,7 +169,13 @@ static unsigned int ipv4_confirm(void *priv,
 	struct nf_conn *ct;
 
 	log_skb(skb, "######################### postrouting conntrack hook starts");
-	log_skb_pref(skb, "okk");
+
+	if (check_if_bypass_conntrack(skb)) {
+		log_skb_pref(skb, "fake udp packet, bypass conntrack !!!!!!!!!!!!!!!!");
+		return NF_ACCEPT;
+	} else {
+		log_skb_pref(skb, "normal udp packet!!!!!!!!!!");
+	}
 
 	ct = nf_ct_get(skb, &ctinfo);
 	if (!ct || ctinfo == IP_CT_RELATED_REPLY) {
@@ -211,11 +218,6 @@ static unsigned int ipv4_conntrack_local(void *priv,
 			skb->_nfct = 0;
 			nf_ct_put(tmpl);
 		}
-		return NF_ACCEPT;
-	}
-
-	if (skb->cb[47] == 147) {
-		log_skb_pref(skb, "fake udp packet, ignore!");
 		return NF_ACCEPT;
 	}
 
@@ -417,10 +419,6 @@ static unsigned int ipv6_conntrack_local(void *priv,
 					 struct sk_buff *skb,
 					 const struct nf_hook_state *state)
 {
-	if (skb->cb[47] == 147) {
-		log_skb_pref(skb, "fake ipv6 udp packet, ignore!");
-		return NF_ACCEPT;
-	}
 	return nf_conntrack_in(skb, state);
 }
 

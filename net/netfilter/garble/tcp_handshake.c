@@ -62,7 +62,6 @@ tcp_tuple_t *extract_tuple_info(struct sk_buff *skb, tcp_tuple_t *tuple)
         struct tcphdr *tcph;
 	struct udphdr *udph;
 
-
         // skb->network_header 应该已经指向 IP 头（由协议栈设置）
         iph = ip_hdr(skb);
         if (!iph)
@@ -91,12 +90,11 @@ tcp_tuple_t *extract_tuple_info(struct sk_buff *skb, tcp_tuple_t *tuple)
 		if (!udph)
 			return NULL;
 
-		sport = tcph->source;
-		dport = tcph->dest;
-        }
-
-        printk(KERN_INFO "5-tuple: tcp %pI4:%u -> %pI4:%u proto=%u\n",
-       &saddr, ntohs(sport), &daddr, ntohs(dport), protocol);
+		sport = udph->source;
+		dport = udph->dest;
+        } else {
+		return NULL;
+	}
 
 	tuple->daddr = daddr;
 	tuple->saddr = saddr;
@@ -416,15 +414,13 @@ void response_tls_client_hello_v6(const struct in6_addr *local, const struct in6
 	generate_and_send_packet_v6(local, remote, sport, dport, sk, payload, payload_len);
 }
 
-struct sk_buff *generate_and_send_udp_packet(struct sk_buff *skb, char *payload, int payload_len);
+
+struct sk_buff *generate_and_send_udp_packet(tcp_tuple_t *tuple, struct sk_buff *skb, char *payload, int payload_len);
 
 
-
-struct sk_buff *generate_and_send_udp_packet_v4(tcp_tuple_t *tuple, struct sk_buff *skb, char *payload, int payload_len)
+struct sk_buff *generate_and_send_udp_packet(tcp_tuple_t *tuple, struct sk_buff *skb, char *payload, int payload_len)
 {
 	struct sk_buff *new_skb;
-	//struct iphdr *iph;
-	//struct udphdr *udph;
 	struct iphdr *new_iph;
 	struct udphdr *new_udph;
 	u8 *data;
@@ -436,28 +432,26 @@ struct sk_buff *generate_and_send_udp_packet_v4(tcp_tuple_t *tuple, struct sk_bu
 	struct flowi4 fl4;
 	int ret;
 
-	log_tuple_info(skb, "nothing.....");
+	if (!skb->sk) {
+		return NULL;
+	}
 
 	net = sock_net(skb->sk);
 	if (!net)
 		return NULL;
 
-	//__log("great markkkkkkmark skb->sk 0x%p", skb->sk);
-
-	//ip_hdr_len = iph->ihl * 4;
 	total_len = ip_hdr_len + udp_hdr_len + payload_len;
-//	net = dev_net(skb->dev);
-	//__log("mark");
+
 	/* Allocate new skb */
 	new_skb = alloc_skb(total_len + LL_MAX_HEADER, GFP_ATOMIC);
 	if (!new_skb) {
 		return NULL;
 	}
-	//__log("mark");
+
 	/* Reserve space for link layer header */
 	skb_reserve(new_skb, LL_MAX_HEADER);
 	skb_reset_network_header(new_skb);
-	//__log("mark");
+
 	/* Add IP header space */
 	new_iph = (struct iphdr *)skb_put(new_skb, ip_hdr_len);
 	
@@ -472,8 +466,8 @@ struct sk_buff *generate_and_send_udp_packet_v4(tcp_tuple_t *tuple, struct sk_bu
 
 	/* Build UDP header - use same src/dst as original packet */
 	memset(new_udph, 0, sizeof(struct udphdr));
-	new_udph->source = tuple->saddr; 
-	new_udph->dest = tuple->daddr;
+	new_udph->source = tuple->sport; 
+	new_udph->dest = tuple->dport;
 	new_udph->len = htons(udp_hdr_len + payload_len);
 	new_udph->check = 0;			/* Will be calculated later */
 
@@ -501,8 +495,6 @@ struct sk_buff *generate_and_send_udp_packet_v4(tcp_tuple_t *tuple, struct sk_bu
 					    IPPROTO_UDP,
 					    csum_partial(new_udph, udp_hdr_len + payload_len, 0));
 
-	new_skb->cb[47] = 0xff;
-
 	/* Calculate IP checksum */
 	ip_send_check(new_iph);
 
@@ -524,8 +516,6 @@ struct sk_buff *generate_and_send_udp_packet_v4(tcp_tuple_t *tuple, struct sk_bu
 
 	new_skb->cb[47] = 147;
 
-	log_skb(skb, "new packet skb %p", new_skb);
-
 	/* Send packet */
 	ret = ip_local_out(net, NULL, new_skb);
 	if (ret < 0) {
@@ -536,11 +526,13 @@ struct sk_buff *generate_and_send_udp_packet_v4(tcp_tuple_t *tuple, struct sk_bu
 	return new_skb;
 }
 
-
+inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len);
 
 void insert_udp_packet(struct sk_buff *skb)
 {
-	tcp_tuple_t tuple;
+	tcp_tuple_t tuple;	
+	unsigned char payload[512];
+	int payload_len;
 
 	if (!extract_tuple_info(skb, &tuple))
 		return;
@@ -548,19 +540,20 @@ void insert_udp_packet(struct sk_buff *skb)
 	if (check_local_traffic(tuple.saddr, tuple.daddr))
 		return;
 
+	if (!build_wechat_video_call_msg(payload, &payload_len))
+		return;
 
-	generate_and_send_udp_packet(skb, "world", strlen("world"));
+	generate_and_send_udp_packet(&tuple, skb, payload, payload_len);
 }
 
 void garble_insert_udp_packet(struct sk_buff *skb)
 {
-
-
-	__log("protocollllllllllllllll: %d", ntohs(skb->protocol));
+	if (!garble_check_if_udp_enabled())
+		return;
 
 	if (skb->protocol == htons(ETH_P_IP))
 		insert_udp_packet(skb);
         else if (skb->protocol == htons(ETH_P_IPV6))
-		generate_and_send_udp_packet(skb, "world", strlen("world"));
+		insert_udp_packet(skb);
 
 }

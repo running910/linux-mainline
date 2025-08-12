@@ -11,3 +11,5 @@ inline bool garble_check_if_http_enabled(void);
 inline bool garble_check_if_tls_enabled(void);
 
 inline bool garble_check_if_double_enabled(void);
+
+inline bool garble_check_if_udp_enabled(void);

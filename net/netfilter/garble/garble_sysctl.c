@@ -20,6 +20,7 @@ struct garble_config {
 static int garble_enabled = 0;
 static char garble_args[DOMAINS_BUF_LEN] = "";
 static int garble_http_enabled = 0;
+static int garble_udp_enabled = 0; 
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
 
@@ -103,6 +104,13 @@ static struct ctl_table garble_table[] = {
 		.mode       = 0644,
 		.proc_handler = proc_dointvec,
         },
+	{
+		.procname	= "enable_udp",
+		.data		= &garble_udp_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
         {
                 .procname   = "domains",
                 .data       = garble_args,
@@ -181,6 +189,11 @@ inline bool garble_check_if_tls_enabled(void)
 inline bool garble_check_if_http_enabled(void)
 {
 	return garble_http_enabled;
+}
+
+inline bool garble_check_if_udp_enabled(void)
+{
+	return garble_udp_enabled;
 }
 
 inline const char *garble_get_random_domain(void)
