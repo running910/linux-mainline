@@ -1,7 +1,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 
-#include "garble_sysctl.h"
+#include "sysctl.h"
 
 static __exit void nf_garble_exit(void)
 {

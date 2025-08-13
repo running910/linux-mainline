@@ -8,7 +8,7 @@
 //#include <net/tcp.h>
 #include <net/checksum.h>
 
-#include "garble_sysctl.h"
+#include "sysctl.h"
 
 inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len)
 {
