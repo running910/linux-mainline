@@ -147,9 +147,9 @@ int garble_sysctl_init(void)
         garble_sysctl_header = register_sysctl_table(garble_net_root);
 
         if (garble_sysctl_header) {
-                __log("register_sysctl_table() success!");
+                printk("register_sysctl_table() success!");
         } else {
-                __log("register_sysctl_table() failed!");
+                printk("register_sysctl_table() failed!");
         }
 
         return 0;

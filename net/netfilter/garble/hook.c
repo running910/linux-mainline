@@ -7,6 +7,8 @@
 #include <net/ip.h>
 #include <net/tcp.h>
 #include <net/checksum.h>
+#include <linux/version.h>
+
 
 #include "sysctl.h"
 #include "packet.h"
@@ -46,11 +48,19 @@
         && __a->s6_addr32[2] == htonl (0xffff); }))
 
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+
 inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
-
 inline unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
-
 inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len);
+
+#else
+
+extern unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
+extern unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
+extern unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len);
+
+#endif
 
 garble_tuple_t *extract_tuple_info(struct sk_buff *skb, garble_tuple_t *tuple)
 {

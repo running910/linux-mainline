@@ -15,11 +15,11 @@ inline unsigned char *build_http_request(unsigned char *buf, int *len, const cha
 
 	len_ = snprintf((char *)buf, *len, http_fmt, host);
 	if (len_ < 0) {
-		__log("ERROR: snprintf(): %s", "failure");
+		printk("ERROR: snprintf(): %s", "failure");
 		return buf;
 
 	} else if (len_ >= *len) {
-		__log("ERROR: hostname is too long");
+		printk("ERROR: hostname is too long");
 		return buf;
 	}
 

@@ -7,12 +7,20 @@
 #include <net/ip.h>
 #include <net/tcp.h>
 #include <net/checksum.h>
+#include <linux/version.h>
+
 
 #include "sysctl.h"
 #include "packet.h"
 
 
 #define GARBLE_PACKET_TTL (3)
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+extern __sum16
+csum_ipv6_magic(const struct in6_addr *saddr, const struct in6_addr *daddr,
+		__u32 len, __u8 proto, __wsum sum);
+#endif
 
 struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct sock *sk, struct sk_buff *in_skb, char *payload, int payload_len)
 {
