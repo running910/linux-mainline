@@ -61,6 +61,11 @@ tcp_tuple_t *extract_tuple_info(struct sk_buff *skb, tcp_tuple_t *tuple)
 	struct iphdr *iph;
         struct tcphdr *tcph;
 	struct udphdr *udph;
+	u8 protocol;
+	__be32 saddr;
+	__be32 daddr;
+	__be16 sport;
+	__be16 dport;
 
         // skb->network_header 应该已经指向 IP 头（由协议栈设置）
         iph = ip_hdr(skb);
@@ -68,14 +73,11 @@ tcp_tuple_t *extract_tuple_info(struct sk_buff *skb, tcp_tuple_t *tuple)
         	return NULL;
 
         // 协议号
-        u8 protocol = iph->protocol;
+        protocol = iph->protocol;
 
         // IP 地址
-        __be32 saddr = iph->saddr;
-        __be32 daddr = iph->daddr;
-
-        // 端口号
-        __be16 sport = 0, dport = 0;
+        saddr = iph->saddr;
+        daddr = iph->daddr;
 
         if (protocol == IPPROTO_TCP) {
 		tcph = tcp_hdr(skb);
@@ -113,6 +115,8 @@ struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *
 	struct iphdr *iph;
 	struct tcphdr *tcph;
 	u8 *data;
+	struct rtable *rt;
+	struct flowi4 fl4;
 	struct net *net = sock_net(sk);
 
 	//__log("before send tuple: %x sk: %x in_skb: %x", tuple, sk, in_skb);
@@ -173,15 +177,13 @@ struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *
 
 	ip_send_check(iph);  // 计算 IP checksum
 
-	struct rtable *rt;
-	struct flowi4 fl4 = {
-		.daddr = iph->daddr,
-		.saddr = iph->saddr,
-		.flowi4_proto = IPPROTO_TCP,
-		.flowi4_tos = iph->tos,
-	};
+	memset(&fl4, 0, sizeof(fl4));
+	fl4.daddr = iph->daddr;
+	fl4.saddr = iph->saddr;
+	fl4.flowi4_proto = IPPROTO_TCP;
+	fl4.flowi4_tos = iph->tos;
 
-	rt = ip_route_output_key(net, &fl4); // 用 init_net 即可
+	rt = ip_route_output_key(net, &fl4); 
 	if (IS_ERR(rt)) {
 		pr_err("ip_route_output_key failed: %ld\n", PTR_ERR(rt));
 		kfree_skb(skb);
@@ -191,9 +193,7 @@ struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *
 	//skb_dst_set(skb, &rt->dst);
 	skb_dst_set(skb, &rt->dst);
 
-	int ret = ip_local_out(net, (struct sock *)sk, skb);
-
-	//__log("do really send ret %d", ret);
+	ip_local_out(net, (struct sock *)sk, skb);
 
 	//kfree_skb(skb);
 	return NULL;
@@ -289,7 +289,7 @@ struct sk_buff *generate_and_send_packet_v6(const struct in6_addr *saddr, const 
 	skb_dst_set(skb, dst);
 
 	// Send the packet
-	err = ip6_local_out(net, sk, skb);
+	err = ip6_local_out(net, (struct sock *)sk, skb);
 	if (err) {
 		pr_err("ip6_local_out failed: %d\n", err);
 		return NULL;
@@ -313,7 +313,7 @@ static bool check_local_traffic(u32 sip, u32 dip)
 	return false;
 }
 
-static bool check_local_traffic_v6(struct in6_addr *sip, struct in6_addr *dip)
+static bool check_local_traffic_v6(const struct in6_addr *sip, const struct in6_addr *dip)
 {
 
         if (IN6_IS_ADDR_LOOPBACK(sip) || IN6_IS_ADDR_LOOPBACK(dip))
@@ -337,6 +337,9 @@ void response_tls_client_hello(struct sk_buff *skb, const struct sock *sk)
 {
 	tcp_tuple_t tuple;
 	int mode;
+	unsigned char payload[512];
+	int payload_len;
+	const char *sni;
 
 	log_skb(skb, "helloooooooooooooo");
 
@@ -362,12 +365,9 @@ void response_tls_client_hello(struct sk_buff *skb, const struct sock *sk)
 	if (check_local_traffic(tuple.saddr, tuple.daddr))
 		return;
 
-	const char *sni = garble_get_random_domain();
+	sni = garble_get_random_domain();
 	if (!sni)
 		return;
-
-	unsigned char payload[512];
-	int payload_len;
 
 	if (mode) {
 		if (!build_tls_client_hello(payload, &payload_len, sni))
@@ -385,6 +385,10 @@ void response_tls_client_hello(struct sk_buff *skb, const struct sock *sk)
 
 void response_tls_client_hello_v6(const struct in6_addr *local, const struct in6_addr *remote, __be16 sport, __be16 dport, const struct sock *sk)
 {
+	unsigned char payload[512];
+	int payload_len;
+	const char *sni;
+
 	if (!garble_check_if_enabled())
 		return;
 
@@ -399,12 +403,9 @@ void response_tls_client_hello_v6(const struct in6_addr *local, const struct in6
 		return;
 	}
 
-	const char *sni = garble_get_random_domain();
+	sni = garble_get_random_domain();
 	if (!sni)
 		return;
-
-	unsigned char payload[512];
-	int payload_len;
 
 	if (!build_tls_client_hello(payload, &payload_len, sni))
 		return;

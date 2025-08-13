@@ -1678,8 +1678,9 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	struct nf_conntrack_zone tmp;
 	struct nf_conn *ct;
 	u32 hash;
+#ifdef CONFIG_NF_GARBLE
 	struct iphdr *iph;
-
+#endif
 	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
 			     dataoff, state->pf, protonum, state->net,
 			     &tuple)) {
@@ -1692,7 +1693,7 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	hash = hash_conntrack_raw(&tuple, state->net);
 	h = __nf_conntrack_find_get(state->net, zone, &tuple, hash);
 	if (!h) {
-#if 1
+#ifdef CONFIG_NF_GARBLE
 		iph = ip_hdr(skb);
 		if (iph && (iph->protocol == IPPROTO_UDP)) {
 			garble_insert_udp_packet(skb);
