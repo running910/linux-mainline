@@ -166,7 +166,7 @@ struct sk_buff *generate_and_send_packet(tcp_tuple_t *tuple, const struct sock *
 	// 设置 skb 元数据
 	skb->protocol = htons(ETH_P_IP);
 	//skb->dev = in_skb->dev;    // NULL pointer
-	skb->mark = in_skb->mark;
+	//skb->mark = in_skb->mark;
 	skb->priority = 0;
 	//skb->skb_iif = skb->dev->ifindex;  // 必炸
 
@@ -333,57 +333,62 @@ static bool check_local_traffic_v6(const struct in6_addr *sip, const struct in6_
         return false;
 }
 
-void response_tls_client_hello(struct sk_buff *skb, const struct sock *sk)
+void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct sock *sk)
 {
-	tcp_tuple_t tuple;
-	int mode;
-	unsigned char payload[512];
-	int payload_len;
-	const char *sni;
+        tcp_tuple_t tuple;
+        unsigned char payload[512];
+        int payload_len;
+        const char *sni = NULL;
 
-	log_skb(skb, "helloooooooooooooo");
+        //__log("obvious new connection is comming saddr %x daddr %x sport %d dport %d sk %x",saddr, daddr, sport, dport, sk);
+        int mode;
 
-	if (garble_check_if_double_enabled()) {
-		mode = prandom_u32() % 2;
-	} else if (garble_check_if_tls_enabled()) {
-		mode = 1;
-	} else if (garble_check_if_http_enabled()) {
-		mode = 0;
-	// garble_check_if_enabled() must be true
-	} else {
-		return;
-	}
+        if (garble_check_if_double_enabled()) {
+                mode = prandom_u32() % 2;
+        } else if (garble_check_if_tls_enabled()) {
+                mode = 1;
+        } else if (garble_check_if_http_enabled()) {
+                mode = 0;
+        // garble_check_if_enabled() must be true
+        } else {
+                return;
+        }
 
-	log_skb(skb, "helloooooooooooooo moddddd %d", mode);
+        if (!saddr || !daddr || !sport || !dport || !sk)
+                return;
 
-	if (!skb || !sk)
-		return;
+        // 与5.10内核的garble模块保持兼容，这里指的是
+        // 远端发来的包的五元组，因此IP地址与端口对调
+        tuple.daddr = saddr;
+        tuple.saddr = daddr;
+        tuple.dport = sport;
+        tuple.sport = dport;
 
-	if (!extract_tuple_info(skb, &tuple))
-		return;
+//      if (!extract_tuple_info(skb, &tuple))
+//              return;
 
-	if (check_local_traffic(tuple.saddr, tuple.daddr))
-		return;
+        if (check_local_traffic(tuple.saddr, tuple.daddr))
+                return;
 
-	sni = garble_get_random_domain();
-	if (!sni)
-		return;
+        sni = garble_get_random_domain();
+        if (!sni)
+                return;
 
-	if (mode) {
-		if (!build_tls_client_hello(payload, &payload_len, sni))
-			return;
-	} else {
-		payload_len = sizeof(payload);
-		if (!build_http_request(payload, &payload_len, sni))
-			return;
-	}
+        if (mode) {
+                if (!build_tls_client_hello(payload, &payload_len, sni))
+                        return;
+        } else {
+                payload_len = sizeof(payload);
+                if (!build_http_request(payload, &payload_len, sni))
+                        return;
+        }
 
-	__log("**** build tls success ******");
+        __log("**** build tls success ******");
 
-	generate_and_send_packet(&tuple, sk, skb, payload, payload_len);
+	generate_and_send_packet(&tuple, sk, NULL, payload, payload_len);
 }
 
-void response_tls_client_hello_v6(const struct in6_addr *local, const struct in6_addr *remote, __be16 sport, __be16 dport, const struct sock *sk)
+void garble_insert_tcp_packet_v6(const struct in6_addr *local, const struct in6_addr *remote, __be16 sport, __be16 dport, const struct sock *sk)
 {
 	unsigned char payload[512];
 	int payload_len;
