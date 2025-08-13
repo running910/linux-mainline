@@ -420,10 +420,6 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *local, const struct in6_
 	generate_and_send_packet_v6(local, remote, sport, dport, sk, payload, payload_len);
 }
 
-
-struct sk_buff *generate_and_send_udp_packet(tcp_tuple_t *tuple, struct sk_buff *skb, char *payload, int payload_len);
-
-
 struct sk_buff *generate_and_send_udp_packet(tcp_tuple_t *tuple, struct sk_buff *skb, char *payload, int payload_len)
 {
 	struct sk_buff *new_skb;
@@ -534,6 +530,34 @@ struct sk_buff *generate_and_send_udp_packet(tcp_tuple_t *tuple, struct sk_buff 
 
 inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len);
 
+
+static inline bool check_if_well_known_udp_port(__be16 port)
+{
+	u16 nport = ntohs(port); // 网络字节序转主机字节序
+
+	/* 检查内核中已明确定义的UDP端口 */
+	switch (nport) {
+	case 53:    // DNS 
+	case 67:    // DHCP服务器
+	case 68:    // DHCP客户端
+	case 69:    // TFTP
+	case 123:   // NTP
+	case 161:   // SNMP 
+	case 162:   // SNMP Trap
+	case 500:   // ISAKMP/IKE
+	case 514:   // Syslog
+	case 520:   // RIP
+	case 1900:  // UPnP SSDP
+	case 5353:  // mDNS
+	case 5355:  // LLMNR
+	case 3478: // STUN
+		__log("well known port %d! ignore", nport);
+		return true;
+	default:
+		return false;
+	}
+}
+
 void insert_udp_packet(struct sk_buff *skb)
 {
 	tcp_tuple_t tuple;	
@@ -544,6 +568,9 @@ void insert_udp_packet(struct sk_buff *skb)
 		return;
 
 	if (check_local_traffic(tuple.saddr, tuple.daddr))
+		return;
+
+	if (check_if_well_known_udp_port(tuple.dport))
 		return;
 
 	if (!build_wechat_video_call_msg(payload, &payload_len))
