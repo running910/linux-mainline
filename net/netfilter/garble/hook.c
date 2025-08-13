@@ -57,14 +57,7 @@ garble_tuple_t *extract_tuple_info(struct sk_buff *skb, garble_tuple_t *tuple)
 	struct iphdr *iph;
         struct tcphdr *tcph;
 	struct udphdr *udph;
-#if 0
-	u8 protocol;
 
-	__be32 saddr;
-	__be32 daddr;
-	__be16 sport;
-	__be16 dport;
-#endif
         // skb->network_header 应该已经指向 IP 头（由协议栈设置）
         iph = ip_hdr(skb);
         if (!iph)
@@ -95,12 +88,7 @@ garble_tuple_t *extract_tuple_info(struct sk_buff *skb, garble_tuple_t *tuple)
         } else {
 		return NULL;
 	}
-#if 0
-	tuple->daddr = daddr;
-	tuple->saddr = saddr;
-	tuple->dport = dport;
-	tuple->sport = sport;
-#endif
+
 	return tuple;
 }
 
@@ -225,9 +213,6 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *local, const struct in6_
 	if (!sni)
 		return;
 
-	if (!build_tls_client_hello(payload, &payload_len, sni))
-		return;
-
 	if (mode) {
                 if (!build_tls_client_hello(payload, &payload_len, sni))
                         return;
@@ -262,7 +247,7 @@ static inline bool check_if_well_known_udp_port(__be16 port)
 	case 5353:  // mDNS
 	case 5355:  // LLMNR
 	case 3478:  // STUN
-		__log("well known port %d! ignore", nport);
+//		__log("well known port %d! ignore", nport);
 		return true;
 	default:
 		return false;
@@ -349,8 +334,6 @@ void insert_udp_packet_v6(struct sk_buff *skb)
 
         if (check_if_well_known_udp_port(tuple.dport))
 		return;
-
-       // log_tuple_info6(skb, "tryyyyyyyyyyyyyyyyyyyyyyyyy");
 
 	if (!build_wechat_video_call_msg(payload, &payload_len))
 		return;
