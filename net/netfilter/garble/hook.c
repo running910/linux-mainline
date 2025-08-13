@@ -52,53 +52,55 @@ inline unsigned char *build_http_request(unsigned char *buf, int *len, const cha
 
 inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len);
 
-tcp_tuple_t *extract_tuple_info(struct sk_buff *skb, tcp_tuple_t *tuple)
+garble_tuple_t *extract_tuple_info(struct sk_buff *skb, garble_tuple_t *tuple)
 {
 	struct iphdr *iph;
         struct tcphdr *tcph;
 	struct udphdr *udph;
+#if 0
 	u8 protocol;
+
 	__be32 saddr;
 	__be32 daddr;
 	__be16 sport;
 	__be16 dport;
-
+#endif
         // skb->network_header 应该已经指向 IP 头（由协议栈设置）
         iph = ip_hdr(skb);
         if (!iph)
         	return NULL;
 
         // 协议号
-        protocol = iph->protocol;
+        tuple->protocol = iph->protocol;
 
         // IP 地址
-        saddr = iph->saddr;
-        daddr = iph->daddr;
+        tuple->saddr = iph->saddr;
+        tuple->daddr = iph->daddr;
 
-        if (protocol == IPPROTO_TCP) {
+        if (tuple->protocol == IPPROTO_TCP) {
 		tcph = tcp_hdr(skb);
 		if (!tcph)
 			return NULL;
 
-		sport = tcph->source;
-		dport = tcph->dest;
+		tuple->sport = tcph->source;
+		tuple->dport = tcph->dest;
 
-        } else if (protocol == IPPROTO_UDP) {
+        } else if (tuple->protocol == IPPROTO_UDP) {
 		udph = udp_hdr(skb);
 		if (!udph)
 			return NULL;
 
-		sport = udph->source;
-		dport = udph->dest;
+		tuple->sport = udph->source;
+		tuple->dport = udph->dest;
         } else {
 		return NULL;
 	}
-
+#if 0
 	tuple->daddr = daddr;
 	tuple->saddr = saddr;
 	tuple->dport = dport;
 	tuple->sport = sport;
-
+#endif
 	return tuple;
 }
 
@@ -140,7 +142,7 @@ static bool check_local_traffic_v6(const struct in6_addr *sip, const struct in6_
 
 void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct sock *sk)
 {
-        tcp_tuple_t tuple;
+        garble_tuple_t tuple;
         unsigned char payload[512];
         int payload_len;
         const char *sni = NULL;
@@ -269,12 +271,15 @@ static inline bool check_if_well_known_udp_port(__be16 port)
 
 void insert_udp_packet(struct sk_buff *skb)
 {
-	tcp_tuple_t tuple;	
+	garble_tuple_t tuple;	
 	unsigned char payload[512];
 	int payload_len;
 
 	if (!extract_tuple_info(skb, &tuple))
 		return;
+
+        if (tuple.protocol != IPPROTO_UDP)
+                return;
 
 	if (check_local_traffic(tuple.saddr, tuple.daddr))
 		return;
@@ -288,9 +293,69 @@ void insert_udp_packet(struct sk_buff *skb)
 	generate_and_send_udp_packet(&tuple, skb, payload, payload_len);
 }
 
+garble_tuple_v6_t *extract_tuple_info_v6(struct sk_buff *skb, garble_tuple_v6_t *tuple)
+{
+	struct ipv6hdr *ip6h;
+	struct tcphdr *tcph;
+	struct udphdr *udph;
+
+	ip6h = ipv6_hdr(skb);
+	if (!ip6h)
+		return NULL;
+
+	tuple->protocol = ip6h->nexthdr;
+	tuple->saddr = ip6h->saddr;
+	tuple->daddr = ip6h->daddr;
+
+	switch (tuple->protocol) {
+	case IPPROTO_TCP:
+		tcph = tcp_hdr(skb);
+		if (!tcph)
+			return NULL;
+		tuple->sport = tcph->source;
+		tuple->dport = tcph->dest;
+		break;
+		
+	case IPPROTO_UDP:
+		udph = udp_hdr(skb);
+		if (!udph)
+			return NULL;
+		tuple->sport = udph->source;
+		tuple->dport = udph->dest;
+		break;
+		
+	default:
+		return NULL;
+	}
+
+	return tuple;
+}
+
 void insert_udp_packet_v6(struct sk_buff *skb)
 {
+        garble_tuple_v6_t tuple;
+        unsigned char payload[512];
+	int payload_len;
 
+        if (!extract_tuple_info_v6(skb, &tuple))
+		return;
+
+        if (tuple.protocol != IPPROTO_UDP)
+                return;
+
+        if (check_local_traffic_v6(&tuple.saddr, &tuple.daddr)) {
+		return;
+	}
+
+        if (check_if_well_known_udp_port(tuple.dport))
+		return;
+
+       // log_tuple_info6(skb, "tryyyyyyyyyyyyyyyyyyyyyyyyy");
+
+	if (!build_wechat_video_call_msg(payload, &payload_len))
+		return;
+
+	generate_and_send_udp_packet_v6(&tuple, skb, payload, payload_len);
 }
 
 void garble_insert_udp_packet(struct sk_buff *skb)
@@ -302,5 +367,4 @@ void garble_insert_udp_packet(struct sk_buff *skb)
 		insert_udp_packet(skb);
         else if (skb->protocol == htons(ETH_P_IPV6))
 		insert_udp_packet_v6(skb);
-
 }

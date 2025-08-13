@@ -840,6 +840,92 @@ static inline void log_tuple_info(const struct sk_buff *skb, const char *extra)
 	}
 }
 
+static inline void log_tuple_info6(const struct sk_buff *skb, const char *extra)
+{
+	const struct iphdr *ip4;
+	const struct ipv6hdr *ip6;
+	char proto_str[8] = "UNKNOWN";
+	__be16 src_port = 0, dst_port = 0;
+	int is_ipv6 = 0;
+
+	if (skb->protocol == htons(ETH_P_IP)) {
+		ip4 = ip_hdr(skb);
+		switch (ip4->protocol) {
+		case IPPROTO_TCP: {
+			const struct tcphdr *tcp = tcp_hdr(skb);
+			src_port = tcp->source;
+			dst_port = tcp->dest;
+			strcpy(proto_str, "TCP");
+			break;
+		}
+		case IPPROTO_UDP: {
+			const struct udphdr *udp = udp_hdr(skb);
+			src_port = udp->source;
+			dst_port = udp->dest;
+			strcpy(proto_str, "UDP");
+			break;
+		}
+		default:
+			strcpy(proto_str, "IP");
+		}
+	} else if (skb->protocol == htons(ETH_P_IPV6)) {
+		is_ipv6 = 1;
+		ip6 = ipv6_hdr(skb);
+		switch (ip6->nexthdr) {
+		case IPPROTO_TCP: {
+			const struct tcphdr *tcp = tcp_hdr(skb);
+			src_port = tcp->source;
+			dst_port = tcp->dest;
+			strcpy(proto_str, "TCP6");
+			break;
+		}
+		case IPPROTO_UDP: {
+			const struct udphdr *udp = udp_hdr(skb);
+			src_port = udp->source;
+			dst_port = udp->dest;
+			strcpy(proto_str, "UDP6");
+			break;
+		}
+		default:
+			strcpy(proto_str, "IP6");
+		}
+	} else {
+		__log("[UNKN] Unknown protocol %04x | %s", 
+		      ntohs(skb->protocol), extra);
+		return;
+	}
+
+	if (is_ipv6) {
+		if (src_port && dst_port) {
+			__log("[%s] %pI6c:[%d] -> %pI6c:[%d] | %s",
+			      proto_str,
+			      &ip6->saddr, ntohs(src_port),
+			      &ip6->daddr, ntohs(dst_port),
+			      extra);
+		} else {
+			__log("[%s] %pI6c -> %pI6c | %s",
+			      proto_str,
+			      &ip6->saddr,
+			      &ip6->daddr,
+			      extra);
+		}
+	} else {
+		if (src_port && dst_port) {
+			__log("[%s] %pI4:%d -> %pI4:%d | %s",
+			      proto_str,
+			      &ip4->saddr, ntohs(src_port),
+			      &ip4->daddr, ntohs(dst_port),
+			      extra);
+		} else {
+			__log("[%s] %pI4 -> %pI4 | %s",
+			      proto_str,
+			      &ip4->saddr,
+			      &ip4->daddr,
+			      extra);
+		}
+	}
+}
+
 #define log_skb_pref(skb, fmt, ...) \
 	do { \
 		if (skb_netlog_should_log(skb)) { \

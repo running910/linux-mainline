@@ -14,7 +14,7 @@
 
 #define GARBLE_PACKET_TTL (3)
 
-struct sk_buff *generate_and_send_tcp_packet(tcp_tuple_t *tuple, const struct sock *sk, struct sk_buff *in_skb, char *payload, int payload_len)
+struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct sock *sk, struct sk_buff *in_skb, char *payload, int payload_len)
 {
 	int tcp_hdr_len = sizeof(struct tcphdr);
 	int ip_hdr_len = sizeof(struct iphdr);
@@ -206,7 +206,7 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	return NULL;
 }
 
-struct sk_buff *generate_and_send_udp_packet(tcp_tuple_t *tuple, struct sk_buff *skb, char *payload, int payload_len)
+struct sk_buff *generate_and_send_udp_packet(garble_tuple_t *tuple, struct sk_buff *skb, char *payload, int payload_len)
 {
 	struct sk_buff *new_skb;
 	struct iphdr *new_iph;
@@ -312,4 +312,108 @@ struct sk_buff *generate_and_send_udp_packet(tcp_tuple_t *tuple, struct sk_buff 
 	}
 
 	return new_skb;
+}
+
+struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct sk_buff *skb, char *payload, int payload_len)
+{
+	int udp_hdr_len = sizeof(struct udphdr);
+	int ip6_hdr_len = sizeof(struct ipv6hdr);
+	int total_len = ip6_hdr_len + udp_hdr_len + payload_len;
+	struct sk_buff *new_skb;
+	struct ipv6hdr *ip6h;
+	struct udphdr *udph;
+	u8 *data;
+	struct net *net;
+	struct flowi6 fl6;
+	struct dst_entry *dst;
+	int err;
+
+	if (!skb || !skb->sk) {
+		return NULL;
+	}
+
+	net = sock_net(skb->sk);
+	if (!net) {
+		return NULL;
+	}
+
+	/* Allocate new skb */
+	new_skb = alloc_skb(total_len + LL_MAX_HEADER, GFP_ATOMIC);
+	if (!new_skb) {
+		return NULL;
+	}
+
+	/* Reserve space for link layer header */
+	skb_reserve(new_skb, LL_MAX_HEADER);
+	skb_reset_network_header(new_skb);
+
+	/* Add IPv6 header */
+	ip6h = (struct ipv6hdr *)skb_put(new_skb, ip6_hdr_len);
+	/* Add UDP header */
+	udph = (struct udphdr *)skb_put(new_skb, udp_hdr_len);
+	/* Add payload */
+	data = skb_put(new_skb, payload_len);
+
+	/* Fill payload */
+	if (payload && payload_len > 0) {
+		memcpy(data, payload, payload_len);
+	}
+
+	/* Build UDP header */
+	memset(udph, 0, sizeof(struct udphdr));
+	udph->source = tuple->sport;
+	udph->dest = tuple->dport;
+	udph->len = htons(udp_hdr_len + payload_len);
+	udph->check = 0;  /* Will be calculated later */
+
+	/* Build IPv6 header */
+	memset(ip6h, 0, sizeof(struct ipv6hdr));
+	ip6h->version = 6;
+	ip6h->payload_len = htons(udp_hdr_len + payload_len);
+	ip6h->nexthdr = IPPROTO_UDP;
+	ip6h->hop_limit = GARBLE_PACKET_TTL;
+	ip6h->saddr = tuple->saddr;
+	ip6h->daddr = tuple->daddr;
+
+	/* Set skb metadata */
+	new_skb->protocol = htons(ETH_P_IPV6);
+	new_skb->priority = skb->priority;
+	new_skb->mark = skb->mark;
+
+	/* Calculate UDP checksum */
+	udph->check = csum_ipv6_magic(&ip6h->saddr, &ip6h->daddr,
+				     udp_hdr_len + payload_len,
+				     IPPROTO_UDP,
+				     csum_partial(udph, udp_hdr_len + payload_len, 0));
+
+	/* Set up flow for routing */
+	memset(&fl6, 0, sizeof(fl6));
+	fl6.flowi6_proto = IPPROTO_UDP;
+	fl6.daddr = ip6h->daddr;
+	fl6.saddr = ip6h->saddr;
+	fl6.flowi6_oif = skb->sk->sk_bound_dev_if;
+	fl6.flowi6_mark = skb->mark;
+	fl6.fl6_sport = udph->source;
+	fl6.fl6_dport = udph->dest;
+
+	/* Get route */
+	dst = ip6_dst_lookup_flow(net, skb->sk, &fl6, NULL);
+	if (IS_ERR(dst)) {
+		pr_err("ip6_dst_lookup_flow failed: %ld\n", PTR_ERR(dst));
+		kfree_skb(new_skb);
+		return NULL;
+	}
+
+	skb_dst_set(new_skb, dst);
+
+	new_skb->cb[47] = 147;
+
+	/* Send packet */
+	err = ip6_local_out(net, skb->sk, new_skb);
+	if (err) {
+		pr_err("ip6_local_out failed: %d\n", err);
+		return NULL;
+	}
+
+	return NULL;
 }
