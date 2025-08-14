@@ -25,6 +25,7 @@ static int garble_tcp_aggressive = 0;
 static int garble_tcp_avg_pkt = 0;
 static int garble_udp_aggressive = 0;
 static int garble_udp_avg_pkt = 0;
+static int garble_tcp_client_enabled = 0;
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
 
@@ -116,15 +117,22 @@ static struct ctl_table garble_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 	{
-		.procname	= "enable_tcp_aggr",
+		.procname	= "enable_tcp_aggressive",
 		.data		= &garble_tcp_aggressive,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
 	{
-		.procname	= "enable_udp_aggr",
+		.procname	= "enable_udp_aggressive",
 		.data		= &garble_udp_aggressive,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "enable_tcp_client",
+		.data		= &garble_tcp_client_enabled,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
@@ -251,6 +259,11 @@ inline int garble_get_udp_avg_pkt(void)
 inline int garble_get_tcp_avg_pkt(void)
 {
 	return garble_tcp_avg_pkt;
+}
+
+inline bool garble_check_if_tcp_client_enabled(void)
+{
+	return garble_tcp_client_enabled;
 }
 
 inline const char *garble_get_random_domain(void)

@@ -405,7 +405,7 @@ void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol)
 
 // calling path:
 // case1: tcp_rcv_state_process => case TCP_SYN_SENT: => tcp_rcv_synsent_state_process => after tcp_send_ack()
-void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, struct sock *sk, bool always)
+void garble_insert_tcp_packet_client(struct sk_buff *skb, struct sock *sk)
 {
 	garble_tuple_t tuple;
         garble_tuple_v6_t tuple6;
@@ -413,23 +413,15 @@ void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, struct sock *sk, b
         if (!garble_check_if_tcp_enabled())
 		return;
 
-        if (!garble_check_if_tcp_aggressive())
+        if (!garble_check_if_tcp_client_enabled())
 		return;
-
-        if (!always) {
-                if (unlikely(!garble_get_tcp_avg_pkt()))
-                        return;
-
-                if (prandom_u32() % garble_get_tcp_avg_pkt() != 0)
-                        return;
-        }
 
 	if (skb->protocol == htons(ETH_P_IP)) {
 
 	        if (!extract_tuple_info(skb, &tuple))
 		        return;
 
-                if (check_if_well_known_tcp_port(tuple.dport))
+                if (check_if_well_known_tcp_port(tuple.sport))
                         return;
 
                 // reverse the tuple
@@ -440,9 +432,50 @@ void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, struct sock *sk, b
 	        if (!extract_tuple_info_v6(skb, &tuple6))
 		        return;
 
-                if (check_if_well_known_tcp_port(tuple6.dport))
+                if (check_if_well_known_tcp_port(tuple6.sport))
                         return;
 
                 garble_insert_tcp_packet_v6(&tuple6.daddr, &tuple6.saddr, tuple6.dport, tuple6.sport, sk);
+        }
+}
+
+// calling path
+// case 1: tcp_transmit_skb => __tcp_transmit_skb before return
+void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, struct sock *sk)
+{
+	garble_tuple_t tuple;
+        garble_tuple_v6_t tuple6;
+
+        if (!garble_check_if_tcp_enabled())
+		return;
+
+        if (!garble_check_if_tcp_aggressive())
+		return;
+
+        if (unlikely(!garble_get_tcp_avg_pkt()))
+                return;
+
+        if (prandom_u32() % garble_get_tcp_avg_pkt() != 0)
+                return;
+
+	if (skb->protocol == htons(ETH_P_IP)) {
+
+	        if (!extract_tuple_info(skb, &tuple))
+		        return;
+
+                if (check_if_well_known_tcp_port(tuple.dport))
+                        return;
+
+                garble_insert_tcp_packet(tuple.saddr, tuple.daddr, tuple.sport, tuple.dport, sk);
+
+        } else if (skb->protocol == htons(ETH_P_IPV6)) {
+
+	        if (!extract_tuple_info_v6(skb, &tuple6))
+		        return;
+
+                if (check_if_well_known_tcp_port(tuple6.dport))
+                        return;
+
+                garble_insert_tcp_packet_v6(&tuple6.saddr, &tuple6.daddr, tuple6.sport, tuple6.dport, sk);
         }
 }

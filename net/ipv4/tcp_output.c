@@ -46,6 +46,7 @@
 #include <linux/static_key.h>
 
 #include <trace/events/tcp.h>
+#include <net/netfilter/nf_garble.h>
 
 /* Refresh clocks of a TCP socket,
  * ensuring monotically increasing values.
@@ -1412,6 +1413,10 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 		tcp_update_skb_after_send(sk, oskb, prior_wstamp);
 		tcp_rate_skb_sent(sk, oskb);
 	}
+
+#ifdef CONFIG_NF_GARBLE
+	garble_insert_tcp_packet_aggressive(skb, sk);
+#endif
 	return err;
 }
 

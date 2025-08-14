@@ -15,6 +15,7 @@ inline bool garble_check_if_tcp_double_enabled(void);
 inline bool garble_check_if_tcp_disabled(void);
 inline bool garble_check_if_udp_enabled(void);
 inline bool garble_check_if_udp_aggressive(void);
+inline bool garble_check_if_tcp_client_enabled(void);
 inline int garble_get_udp_avg_pkt(void);
 inline int garble_get_tcp_avg_pkt(void);
 #else
@@ -27,6 +28,8 @@ extern bool garble_check_if_tcp_double_enabled(void);
 extern bool garble_check_if_tcp_disabled(void);
 extern bool garble_check_if_udp_enabled(void);
 extern bool garble_check_if_udp_aggressive(void);
+extern bool garble_check_if_tcp_client_enabled(void);
 extern int garble_get_udp_avg_pkt(void);
 extern int garble_get_tcp_avg_pkt(void);
+
 #endif

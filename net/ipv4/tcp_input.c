@@ -6197,7 +6197,7 @@ discard:
 		} else {
 			tcp_send_ack(sk);
 #ifdef CONFIG_NF_GARBLE
-			garble_insert_tcp_packet_aggressive(skb, sk, true);
+			garble_insert_tcp_packet_client(skb, sk);
 #endif
 		}
 		return -1;
