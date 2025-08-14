@@ -9,6 +9,8 @@ extern void garble_insert_udp_packet(struct sk_buff *skb);
 
 extern void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol);
 
+extern void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, struct sock *sk, bool always);
+
 static inline bool check_if_bypass_conntrack(struct sk_buff *skb)
 {
 	return (u8)skb->cb[47] == 147;

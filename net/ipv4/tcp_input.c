@@ -80,6 +80,7 @@
 #include <linux/jump_label_ratelimit.h>
 #include <net/busy_poll.h>
 #include <net/mptcp.h>
+#include <net/netfilter/nf_garble.h>
 
 int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
 
@@ -6195,6 +6196,9 @@ discard:
 			return 0;
 		} else {
 			tcp_send_ack(sk);
+#ifdef CONFIG_NF_GARBLE
+			garble_insert_tcp_packet_aggressive(skb, sk, true);
+#endif
 		}
 		return -1;
 	}

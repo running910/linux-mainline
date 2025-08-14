@@ -198,7 +198,6 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
         if (check_local_traffic(tuple.saddr, tuple.daddr))
                 return;
 
-
         if (!generate_tcp_payload(payload, &payload_len))
                 return;
 
@@ -230,7 +229,34 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *local, const struct in6_
         generate_and_send_tcp_packet_v6(local, remote, sport, dport, sk, payload, payload_len);
 }
 
+static inline bool check_if_well_known_tcp_port(__be16 port)
+{
+	u16 nport = ntohs(port);	/* 网络字节序转主机字节序 */
 
+	/* 检查内核中已明确定义的TCP端口 */
+	switch (nport) {
+	case 20:	/* FTP 数据 */
+	case 21:	/* FTP 控制 */
+	case 22:	/* SSH */
+	case 23:	/* Telnet */
+	case 25:	/* SMTP */
+	case 53:	/* DNS */
+	case 80:	/* HTTP */
+	case 110:	/* POP3 */
+	case 143:	/* IMAP */
+	case 443:	/* HTTPS */
+	case 465:	/* SMTPS */
+	case 587:	/* SMTP 提交 */
+	case 993:	/* IMAPS */
+	case 995:	/* POP3S */
+	//case 3306:	/* MySQL */
+	case 5432:	/* PostgreSQL */
+	//case 8080:	/* HTTP 备用 */
+		return true;
+	default:
+		return false;
+	}
+}
 
 static inline bool check_if_well_known_udp_port(__be16 port)
 {
@@ -375,4 +401,48 @@ void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol)
 		insert_udp_packet(skb);
         else if (protocol == ETH_P_IPV6)
 		insert_udp_packet_v6(skb);
+}
+
+// calling path:
+// case1: tcp_rcv_state_process => case TCP_SYN_SENT: => tcp_rcv_synsent_state_process => after tcp_send_ack()
+void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, struct sock *sk, bool always)
+{
+	garble_tuple_t tuple;
+        garble_tuple_v6_t tuple6;
+
+        if (!garble_check_if_tcp_enabled())
+		return;
+
+        if (!garble_check_if_tcp_aggressive())
+		return;
+
+        if (!always) {
+                if (unlikely(!garble_get_tcp_avg_pkt()))
+                        return;
+
+                if (prandom_u32() % garble_get_tcp_avg_pkt() != 0)
+                        return;
+        }
+
+	if (skb->protocol == htons(ETH_P_IP)) {
+
+	        if (!extract_tuple_info(skb, &tuple))
+		        return;
+
+                if (check_if_well_known_tcp_port(tuple.dport))
+                        return;
+
+                // reverse the tuple
+                garble_insert_tcp_packet(tuple.daddr, tuple.saddr, tuple.dport, tuple.sport, sk);
+
+        } else if (skb->protocol == htons(ETH_P_IPV6)) {
+
+	        if (!extract_tuple_info_v6(skb, &tuple6))
+		        return;
+
+                if (check_if_well_known_tcp_port(tuple6.dport))
+                        return;
+
+                garble_insert_tcp_packet_v6(&tuple6.daddr, &tuple6.saddr, tuple6.dport, tuple6.sport, sk);
+        }
 }

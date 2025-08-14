@@ -248,6 +248,11 @@ inline int garble_get_udp_avg_pkt(void)
 	return garble_udp_avg_pkt;
 }
 
+inline int garble_get_tcp_avg_pkt(void)
+{
+	return garble_tcp_avg_pkt;
+}
+
 inline const char *garble_get_random_domain(void)
 {
 	const char *domain = NULL;
