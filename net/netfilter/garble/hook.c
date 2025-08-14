@@ -13,6 +13,10 @@
 #include "sysctl.h"
 #include "packet.h"
 
+#define GARBLE_MAX_TCP_PAYLOAD (512)
+
+#define GARBLE_MAX_UDP_PAYLOAD (512)
+
 
 // 127.0.0.0 -> 127.255.255.255
 #define LOOPBACK_MASK    0xff000000
@@ -138,28 +142,51 @@ static bool check_local_traffic_v6(const struct in6_addr *sip, const struct in6_
         return false;
 }
 
-void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct sock *sk)
+static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_len)
 {
-        garble_tuple_t tuple;
-        unsigned char payload[512];
-        int payload_len;
-        const char *sni = NULL;
-        //__log("obvious new connection is comming saddr %x daddr %x sport %d dport %d sk %x",saddr, daddr, sport, dport, sk);
         int mode;
+        const char *domain = NULL;
 
-	 if (!saddr || !daddr || !sport || !dport || !sk)
-                return;
-
-        if (garble_check_if_double_enabled()) {
+        if (garble_check_if_tcp_double_enabled()) {
                 mode = prandom_u32() % 2;
         } else if (garble_check_if_tls_enabled()) {
                 mode = 1;
         } else if (garble_check_if_http_enabled()) {
                 mode = 0;
-        // garble_check_if_enabled() must be true
+
+        // this is impossible
         } else {
-                return;
+                return NULL;
         }
+
+        domain = garble_get_random_domain();
+        if (!domain)
+                return NULL;
+
+        if (mode) {
+                if (!build_tls_client_hello(buf, out_len, domain))
+                        return NULL;
+        } else {
+                if (!build_http_request(buf, out_len, domain))
+                        return NULL;
+        }
+
+        return buf;
+}
+
+
+void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct sock *sk)
+{
+        garble_tuple_t tuple;
+        unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
+        int payload_len = sizeof(payload);
+        //__log("obvious new connection is comming saddr %x daddr %x sport %d dport %d sk %x",saddr, daddr, sport, dport, sk);
+
+	 if (!saddr || !daddr || !sport || !dport || !sk)
+                return;
+
+        if (garble_check_if_tcp_disabled())
+                return;
 
         // 与5.10内核的garble模块保持兼容，这里指的是
         // 远端发来的包的五元组，因此IP地址与端口对调
@@ -168,48 +195,26 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
         tuple.dport = sport;
         tuple.sport = dport;
 
-//      if (!extract_tuple_info(skb, &tuple))
-//              return;
-
         if (check_local_traffic(tuple.saddr, tuple.daddr))
                 return;
 
-        sni = garble_get_random_domain();
-        if (!sni)
-                return;
 
-        if (mode) {
-                if (!build_tls_client_hello(payload, &payload_len, sni))
-                        return;
-        } else {
-                payload_len = sizeof(payload);
-                if (!build_http_request(payload, &payload_len, sni))
-                        return;
-        }
+        if (!generate_tcp_payload(payload, &payload_len))
+                return;
 
 	generate_and_send_tcp_packet(&tuple, sk, NULL, payload, payload_len);
 }
 
 void garble_insert_tcp_packet_v6(const struct in6_addr *local, const struct in6_addr *remote, __be16 sport, __be16 dport, const struct sock *sk)
 {
-	unsigned char payload[512];
-	int payload_len;
-	const char *sni;
-	int mode;
+	unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
+	int payload_len = sizeof(payload);
 
 	if (!local || !remote)
 		return;
 
-        if (garble_check_if_double_enabled()) {
-                mode = prandom_u32() % 2;
-        } else if (garble_check_if_tls_enabled()) {
-                mode = 1;
-        } else if (garble_check_if_http_enabled()) {
-                mode = 0;
-        // garble_check_if_enabled() must be true
-        } else {
+        if (garble_check_if_tcp_disabled())
                 return;
-        }
 
 	// it shows correct ip and port info
 	//__log("**** ipv6 tcp syn arrives remote %pI6c[port:%u] local %pI6c[port:%u] ******", remote, ntohs(dport), local, ntohs(sport));
@@ -219,20 +224,10 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *local, const struct in6_
 		return;
 	}
 
-	sni = garble_get_random_domain();
-	if (!sni)
-		return;
+        if (!generate_tcp_payload(payload, &payload_len))
+                return;
 
-	if (mode) {
-                if (!build_tls_client_hello(payload, &payload_len, sni))
-                        return;
-        } else {
-                payload_len = sizeof(payload);
-                if (!build_http_request(payload, &payload_len, sni))
-                        return;
-        }
-
-	generate_and_send_tcp_packet_v6(local, remote, sport, dport, sk, payload, payload_len);
+        generate_and_send_tcp_packet_v6(local, remote, sport, dport, sk, payload, payload_len);
 }
 
 
@@ -267,7 +262,7 @@ static inline bool check_if_well_known_udp_port(__be16 port)
 void insert_udp_packet(struct sk_buff *skb)
 {
 	garble_tuple_t tuple;	
-	unsigned char payload[512];
+	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
 	int payload_len;
 
 	if (!extract_tuple_info(skb, &tuple))
@@ -329,7 +324,7 @@ garble_tuple_v6_t *extract_tuple_info_v6(struct sk_buff *skb, garble_tuple_v6_t 
 void insert_udp_packet_v6(struct sk_buff *skb)
 {
         garble_tuple_v6_t tuple;
-        unsigned char payload[512];
+        unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
 	int payload_len;
 
         if (!extract_tuple_info_v6(skb, &tuple))

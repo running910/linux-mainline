@@ -171,12 +171,12 @@ void garble_sysctl_exit(void)
 		call_rcu(&cfg->rcu, garble_config_free);
 }
 
-inline bool garble_check_if_enabled(void)
+inline bool garble_check_if_tcp_enabled(void)
 {
 	return garble_enabled || garble_http_enabled;
 }
 
-inline bool garble_check_if_double_enabled(void)
+inline bool garble_check_if_tcp_double_enabled(void)
 {
 	return garble_enabled && garble_http_enabled;
 }
@@ -189,6 +189,11 @@ inline bool garble_check_if_tls_enabled(void)
 inline bool garble_check_if_http_enabled(void)
 {
 	return garble_http_enabled;
+}
+
+inline bool garble_check_if_tcp_disabled(void)
+{
+	return !garble_enabled && !garble_http_enabled;
 }
 
 inline bool garble_check_if_udp_enabled(void)
