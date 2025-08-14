@@ -116,6 +116,7 @@
 #if IS_ENABLED(CONFIG_IPV6)
 #include <net/ipv6_stubs.h>
 #endif
+#include <net/netfilter/nf_garble.h>
 
 struct udp_table udp_table __read_mostly;
 EXPORT_SYMBOL(udp_table);
@@ -945,6 +946,10 @@ csum_partial:
 		uh->check = CSUM_MANGLED_0;
 
 send:
+#ifdef CONFIG_NF_GARBLE
+	/* at this point skb->protocol is 0 */
+	garble_insert_udp_packet_aggressive(skb, ETH_P_IP);
+#endif
 	err = ip_send_skb(sock_net(sk), skb);
 	if (err) {
 		if (err == -ENOBUFS && !inet->recverr) {

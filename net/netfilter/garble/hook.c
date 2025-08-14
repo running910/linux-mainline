@@ -356,3 +356,23 @@ void garble_insert_udp_packet(struct sk_buff *skb)
         else if (skb->protocol == htons(ETH_P_IPV6))
 		insert_udp_packet_v6(skb);
 }
+
+void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol)
+{
+        if (!garble_check_if_udp_enabled())
+		return;
+
+        if (!garble_check_if_udp_aggressive())
+		return;
+
+        if (unlikely(!garble_get_udp_avg_pkt()))
+                return;
+
+        if (prandom_u32() % garble_get_udp_avg_pkt() != 0)
+                return;
+
+	if (protocol == ETH_P_IP)
+		insert_udp_packet(skb);
+        else if (protocol == ETH_P_IPV6)
+		insert_udp_packet_v6(skb);
+}

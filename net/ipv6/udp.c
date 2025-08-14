@@ -54,6 +54,8 @@
 #include <trace/events/skb.h>
 #include "udp_impl.h"
 
+#include <net/netfilter/nf_garble.h>
+
 static u32 udp6_ehashfn(const struct net *net,
 			const struct in6_addr *laddr,
 			const u16 lport,
@@ -1230,6 +1232,10 @@ csum_partial:
 		uh->check = CSUM_MANGLED_0;
 
 send:
+#ifdef CONFIG_NF_GARBLE
+	/* actually skb->protocol is htons(ETH_P_IPV6) now */
+	garble_insert_udp_packet_aggressive(skb, ETH_P_IPV6);
+#endif
 	err = ip6_send_skb(skb);
 	if (err) {
 		if (err == -ENOBUFS && !inet6_sk(sk)->recverr) {
