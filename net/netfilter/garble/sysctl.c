@@ -60,7 +60,8 @@ static int proc_handler_domains(struct ctl_table *table, int write,
 	/*
 	 * strscpy确保domain_buf字符串以'\0'结束（其实kzalloc已经确保了最后一个字节必定为'\0'）
 	 */
-	strscpy(new_cfg->domain_buf, (char *)table->data, DOMAINS_BUF_LEN);
+	if (strscpy(new_cfg->domain_buf, (char *)table->data, DOMAINS_BUF_LEN) < 0)
+		return -EINVAL;
 
 	/* 
 	 * 解析成域名列表

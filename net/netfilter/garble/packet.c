@@ -131,6 +131,10 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	struct dst_entry *dst;
 	int err;
 
+	if (!net) {
+		return NULL;
+	}
+
 	//__log("**** ipv6 tcp tls hello packet src %pI6c[port:%u] dst %pI6c[port:%u] ******", saddr, ntohs(sport), daddr, ntohs(dport));
 
 	// Allocate skb
@@ -195,7 +199,11 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	fl6.fl6_dport = tcph->dest;
 
 	// Get route
-	dst = ip6_dst_lookup_flow(net, sk, &fl6, NULL);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
+        dst = ip6_dst_lookup_flow(sk, &fl6, NULL);
+#else
+        dst = ip6_dst_lookup_flow(net, sk, &fl6, NULL);
+#endif
 	if (IS_ERR(dst)) {
 		pr_err("ip6_dst_lookup_flow failed: %ld\n", PTR_ERR(dst));
 		kfree_skb(skb);
@@ -405,7 +413,12 @@ struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct
 	fl6.fl6_dport = udph->dest;
 
 	/* Get route */
-	dst = ip6_dst_lookup_flow(net, skb->sk, &fl6, NULL);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
+        dst = ip6_dst_lookup_flow(skb->sk, &fl6, NULL);
+#else
+        dst = ip6_dst_lookup_flow(net, skb->sk, &fl6, NULL);
+#endif
+
 	if (IS_ERR(dst)) {
 		pr_err("ip6_dst_lookup_flow failed: %ld\n", PTR_ERR(dst));
 		kfree_skb(new_skb);
