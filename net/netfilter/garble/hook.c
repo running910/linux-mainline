@@ -15,7 +15,7 @@
 
 #define GARBLE_MAX_TCP_PAYLOAD (512)
 
-#define GARBLE_MAX_UDP_PAYLOAD (512)
+#define GARBLE_MAX_UDP_PAYLOAD (1472)
 
 
 // 127.0.0.0 -> 127.255.255.255
@@ -58,11 +58,15 @@ inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, c
 inline unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
 inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len);
 
+inline unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len);
+
 #else
 
 extern unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
 extern unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
 extern unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len);
+extern unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len);
+
 
 #endif
 
@@ -303,8 +307,9 @@ void insert_udp_packet(struct sk_buff *skb)
 	if (check_if_well_known_udp_port(tuple.dport))
 		return;
 
-	if (!build_wechat_video_call_msg(payload, &payload_len))
+	if (!build_payload_from_binary(payload, &payload_len)) {
 		return;
+	}
 
 	generate_and_send_udp_packet(&tuple, skb, payload, payload_len);
 }
@@ -366,7 +371,7 @@ void insert_udp_packet_v6(struct sk_buff *skb)
         if (check_if_well_known_udp_port(tuple.dport))
 		return;
 
-	if (!build_wechat_video_call_msg(payload, &payload_len))
+	if (!build_payload_from_binary(payload, &payload_len))
 		return;
 
 	generate_and_send_udp_packet_v6(&tuple, skb, payload, payload_len);

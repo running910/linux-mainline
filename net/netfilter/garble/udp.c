@@ -41,3 +41,18 @@ inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_l
 
 	return buf;
 }
+
+inline unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len)
+{
+	int len;
+	unsigned char *tmp;
+
+	tmp = (unsigned char *)garble_get_udp_payload((size_t *)&len);
+	if (!tmp)
+		return NULL;
+
+	memcpy(buf, tmp, len);
+	*out_len = len;
+
+	return buf;
+}

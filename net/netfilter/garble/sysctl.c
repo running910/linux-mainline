@@ -5,10 +5,12 @@
 #include <linux/rcupdate.h>
 #include <linux/slab.h>
 #include <linux/random.h>
+#include <linux/proc_fs.h>
 
 
 #define DOMAINS_BUF_LEN 512
 #define MAX_DOMAINS     20
+#define UDP_PAYLOAD_MAX_LEN 4096
 
 struct garble_config {
 	char domain_buf[DOMAINS_BUF_LEN];       // 域名参数buffer，会被strtep切开
@@ -30,6 +32,14 @@ static int garble_tcp_client_enabled = 0;
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
 
 static DEFINE_SPINLOCK(garble_cfg_lock);
+
+static struct {
+	char data[UDP_PAYLOAD_MAX_LEN];
+	int len;
+} udp_payload_data = {
+	.len = 0,
+	.data = {0}
+};
 
 
 static void garble_config_free(struct rcu_head *head)
@@ -94,6 +104,53 @@ static int proc_handler_domains(struct ctl_table *table, int write,
 
 	return 0;
 }
+
+static ssize_t udp_payload_read(struct file *file, char __user *buf,
+				size_t count, loff_t *ppos)
+{
+	ssize_t ret;
+
+	if (*ppos >= UDP_PAYLOAD_MAX_LEN)
+		return 0;
+
+	if (*ppos >= udp_payload_data.len) {
+		return 0;
+	}
+
+	if (count > udp_payload_data.len - *ppos)
+		count = udp_payload_data.len - *ppos;
+
+	if (copy_to_user(buf, udp_payload_data.data + *ppos, count)) {
+		return -EFAULT;
+	}
+
+	*ppos += count;
+	ret = count;
+
+	return ret;
+}
+
+static ssize_t udp_payload_write(struct file *file, const char __user *buf,
+				 size_t count, loff_t *ppos)
+{
+	if (count > UDP_PAYLOAD_MAX_LEN)
+		return -EFBIG;
+
+	if (copy_from_user(udp_payload_data.data, buf, count)) {
+		return -EFAULT;
+	}
+
+	udp_payload_data.len = count;
+	*ppos = count;
+
+	pr_info("garble: udp_payload updated, length = %zu\n", count);
+	return count;
+}
+
+static const struct proc_ops udp_payload_proc_ops = {
+	.proc_read	= udp_payload_read,
+	.proc_write	= udp_payload_write,
+};
 
 static struct ctl_table garble_table[] = {
         {
@@ -182,6 +239,8 @@ static struct ctl_table garble_net_root[] = {
 };
 
 static struct ctl_table_header *garble_sysctl_header;
+static struct proc_dir_entry *garble_proc_dir;
+static struct proc_dir_entry *udp_payload_proc_entry;
 
 int garble_sysctl_init(void)
 {
@@ -193,6 +252,20 @@ int garble_sysctl_init(void)
                 printk("register_sysctl_table() failed!");
         }
 
+	/* Create procfs directory and UDP payload entry */
+	garble_proc_dir = proc_mkdir("garble", NULL);
+	if (!garble_proc_dir) {
+		pr_err("garble: failed to create /proc/garble directory\n");
+		return -ENOMEM;
+	}
+
+	udp_payload_proc_entry = proc_create("udp_payload", 0644, garble_proc_dir, &udp_payload_proc_ops);
+	if (!udp_payload_proc_entry) {
+		pr_err("garble: failed to create /proc/garble/udp_payload entry\n");
+		remove_proc_entry("garble", NULL);
+		return -ENOMEM;
+	}
+
         return 0;
 }
 
@@ -202,6 +275,12 @@ void garble_sysctl_exit(void)
 	unsigned long flags;
 
 	unregister_sysctl_table(garble_sysctl_header);
+
+	/* Remove procfs entries */
+	if (udp_payload_proc_entry)
+		remove_proc_entry("udp_payload", garble_proc_dir);
+	if (garble_proc_dir)
+		remove_proc_entry("garble", NULL);
 
 	spin_lock_irqsave(&garble_cfg_lock, flags);
 	cfg = rcu_dereference_protected(garble_cfg_ptr, lockdep_is_held(&garble_cfg_lock));
@@ -279,4 +358,15 @@ inline const char *garble_get_random_domain(void)
 	rcu_read_unlock();
 
 	return domain;
+}
+
+inline const char *garble_get_udp_payload(int *len)
+{
+	if (udp_payload_data.len > 0) {
+		*len = udp_payload_data.len;
+		return udp_payload_data.data;
+	} else {
+		*len = 0;
+		return NULL;
+	}
 }
