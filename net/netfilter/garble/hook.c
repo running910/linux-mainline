@@ -307,8 +307,14 @@ void insert_udp_packet(struct sk_buff *skb)
 	if (check_if_well_known_udp_port(tuple.dport))
 		return;
 
-	if (!build_payload_from_binary(payload, &payload_len)) {
-		return;
+	if (garble_check_if_udp_binary_enabled()) {
+		if (!build_payload_from_binary(payload, &payload_len)) {
+			return;
+		}
+	} else {
+		if (!build_wechat_video_call_msg(payload, &payload_len)) {
+			return;
+		}
 	}
 
 	generate_and_send_udp_packet(&tuple, skb, payload, payload_len);
@@ -371,8 +377,15 @@ void insert_udp_packet_v6(struct sk_buff *skb)
         if (check_if_well_known_udp_port(tuple.dport))
 		return;
 
-	if (!build_payload_from_binary(payload, &payload_len))
-		return;
+	if (garble_check_if_udp_binary_enabled()) {
+		if (!build_payload_from_binary(payload, &payload_len)) {
+			return;
+		}
+	} else {
+		if (!build_wechat_video_call_msg(payload, &payload_len)) {
+			return;
+		}
+	}
 
 	generate_and_send_udp_packet_v6(&tuple, skb, payload, payload_len);
 }

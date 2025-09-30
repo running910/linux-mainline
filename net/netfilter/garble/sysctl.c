@@ -28,6 +28,7 @@ static int garble_tcp_avg_pkt = 0;
 static int garble_udp_aggressive = 0;
 static int garble_udp_avg_pkt = 0;
 static int garble_tcp_client_enabled = 0;
+static int garble_udp_binary_payload = 0; 
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
 
@@ -196,6 +197,13 @@ static struct ctl_table garble_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 	{
+		.procname	= "enable_udp_binary_payload",
+		.data		= &garble_udp_binary_payload,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
 		.procname	= "tcp_aggr_avg_pkt",
 		.data		= &garble_tcp_avg_pkt,
 		.maxlen		= sizeof(int),
@@ -324,6 +332,11 @@ inline bool garble_check_if_tcp_disabled(void)
 inline bool garble_check_if_udp_enabled(void)
 {
 	return garble_udp_enabled;
+}
+
+inline bool garble_check_if_udp_binary_enabled(void)
+{
+	return garble_udp_binary_payload;
 }
 
 inline bool garble_check_if_udp_aggressive(void)

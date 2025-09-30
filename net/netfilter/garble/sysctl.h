@@ -19,6 +19,8 @@ inline bool garble_check_if_tcp_client_enabled(void);
 inline int garble_get_udp_avg_pkt(void);
 inline int garble_get_tcp_avg_pkt(void);
 inline const char *garble_get_udp_payload(size_t *len);
+inline bool garble_check_if_udp_binary_enabled(void);
+
 
 #else
 extern const char *garble_get_random_domain(void);
@@ -34,5 +36,6 @@ extern bool garble_check_if_tcp_client_enabled(void);
 extern int garble_get_udp_avg_pkt(void);
 extern int garble_get_tcp_avg_pkt(void);
 extern const char *garble_get_udp_payload(size_t *len);
+extern bool garble_check_if_udp_binary_enabled(void);
 
 #endif
