@@ -289,9 +289,10 @@ static inline bool check_if_well_known_udp_port(__be16 port)
 	}
 }
 
-void insert_udp_packet(struct sk_buff *skb)
+void insert_udp_packet(struct sk_buff *skb, int reverse, struct net *net)
 {
-	garble_tuple_t tuple;	
+	garble_tuple_t tuple;
+	garble_tuple_t tmp;
 	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
 	int payload_len;
 
@@ -300,6 +301,14 @@ void insert_udp_packet(struct sk_buff *skb)
 
         if (tuple.protocol != IPPROTO_UDP)
                 return;
+
+	if (reverse) {
+		memcpy(&tmp, &tuple, sizeof(tmp));
+		tuple.daddr = tmp.saddr;
+		tuple.dport = tmp.sport;
+		tuple.saddr = tmp.daddr;
+		tuple.sport = tmp.dport;
+	}
 
 	if (check_local_traffic(tuple.saddr, tuple.daddr))
 		return;
@@ -317,7 +326,7 @@ void insert_udp_packet(struct sk_buff *skb)
 		}
 	}
 
-	generate_and_send_udp_packet(&tuple, skb, payload, payload_len);
+	generate_and_send_udp_packet(&tuple, skb, net, payload, payload_len);
 }
 
 garble_tuple_v6_t *extract_tuple_info_v6(struct sk_buff *skb, garble_tuple_v6_t *tuple)
@@ -358,10 +367,11 @@ garble_tuple_v6_t *extract_tuple_info_v6(struct sk_buff *skb, garble_tuple_v6_t 
 	return tuple;
 }
 
-void insert_udp_packet_v6(struct sk_buff *skb)
+void insert_udp_packet_v6(struct sk_buff *skb, int reverse, struct net *net)
 {
-        garble_tuple_v6_t tuple;
-        unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
+	garble_tuple_v6_t tuple;
+	garble_tuple_v6_t tmp;
+	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
 	int payload_len;
 
         if (!extract_tuple_info_v6(skb, &tuple))
@@ -369,6 +379,14 @@ void insert_udp_packet_v6(struct sk_buff *skb)
 
         if (tuple.protocol != IPPROTO_UDP)
                 return;
+
+	if (reverse) {
+		memcpy(&tmp, &tuple, sizeof(tuple));
+		tuple.daddr = tmp.saddr;
+		tuple.dport = tmp.sport;
+		tuple.saddr = tmp.daddr;
+		tuple.sport = tmp.dport;
+	}
 
         if (check_local_traffic_v6(&tuple.saddr, &tuple.daddr)) {
 		return;
@@ -387,21 +405,21 @@ void insert_udp_packet_v6(struct sk_buff *skb)
 		}
 	}
 
-	generate_and_send_udp_packet_v6(&tuple, skb, payload, payload_len);
+	generate_and_send_udp_packet_v6(&tuple, skb, net, payload, payload_len);
 }
 
-void garble_insert_udp_packet(struct sk_buff *skb)
+void garble_insert_udp_packet(struct sk_buff *skb, int reverse, struct net *net)
 {
 	if (!garble_check_if_udp_enabled())
 		return;
 
 	if (skb->protocol == htons(ETH_P_IP))
-		insert_udp_packet(skb);
+		insert_udp_packet(skb, reverse, net);
         else if (skb->protocol == htons(ETH_P_IPV6))
-		insert_udp_packet_v6(skb);
+		insert_udp_packet_v6(skb, reverse, net);
 }
 
-void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol)
+void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol, struct net *net)
 {
         if (!garble_check_if_udp_enabled())
 		return;
@@ -416,9 +434,9 @@ void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol)
                 return;
 
 	if (protocol == ETH_P_IP)
-		insert_udp_packet(skb);
+		insert_udp_packet(skb, 0, net);
         else if (protocol == ETH_P_IPV6)
-		insert_udp_packet_v6(skb);
+		insert_udp_packet_v6(skb, 0, net);
 }
 
 // calling path:

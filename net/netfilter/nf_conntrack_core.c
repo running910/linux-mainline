@@ -1678,7 +1678,9 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	struct nf_conntrack_zone tmp;
 	struct nf_conn *ct;
 	u32 hash;
-
+#ifdef CONFIG_NF_GARBLE
+	int reverse = 0;
+#endif
 	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
 			     dataoff, state->pf, protonum, state->net,
 			     &tuple)) {
@@ -1692,7 +1694,9 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	h = __nf_conntrack_find_get(state->net, zone, &tuple, hash);
 	if (!h) {
 #ifdef CONFIG_NF_GARBLE
-		garble_insert_udp_packet(skb);
+		if (state->hook == NF_INET_PRE_ROUTING)
+			reverse = 1;
+		garble_insert_udp_packet(skb, reverse, state->net);
 #endif
 		log_skb_pref(skb, "ct was not found from nf_conntrack_hash");
 		h = init_conntrack(state->net, tmpl, &tuple,

@@ -222,7 +222,7 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	return NULL;
 }
 
-struct sk_buff *generate_and_send_udp_packet(garble_tuple_t *tuple, struct sk_buff *skb, char *payload, int payload_len)
+struct sk_buff *generate_and_send_udp_packet(garble_tuple_t *tuple, struct sk_buff *skb, struct net *net, char *payload, int payload_len)
 {
 	struct sk_buff *new_skb;
 	struct iphdr *new_iph;
@@ -231,18 +231,9 @@ struct sk_buff *generate_and_send_udp_packet(garble_tuple_t *tuple, struct sk_bu
 	int udp_hdr_len = sizeof(struct udphdr);
 	int ip_hdr_len = sizeof(struct iphdr);
 	int total_len;
-	struct net *net;
 	struct rtable *rt;
 	struct flowi4 fl4;
 	int ret;
-
-	if (!skb->sk) {
-		return NULL;
-	}
-
-	net = sock_net(skb->sk);
-	if (!net)
-		return NULL;
 
 	total_len = ip_hdr_len + udp_hdr_len + payload_len;
 
@@ -330,7 +321,7 @@ struct sk_buff *generate_and_send_udp_packet(garble_tuple_t *tuple, struct sk_bu
 	return new_skb;
 }
 
-struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct sk_buff *skb, char *payload, int payload_len)
+struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct sk_buff *skb, struct net *net, char *payload, int payload_len)
 {
 	int udp_hdr_len = sizeof(struct udphdr);
 	int ip6_hdr_len = sizeof(struct ipv6hdr);
@@ -339,19 +330,9 @@ struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct
 	struct ipv6hdr *ip6h;
 	struct udphdr *udph;
 	u8 *data;
-	struct net *net;
 	struct flowi6 fl6;
 	struct dst_entry *dst;
 	int err;
-
-	if (!skb || !skb->sk) {
-		return NULL;
-	}
-
-	net = sock_net(skb->sk);
-	if (!net) {
-		return NULL;
-	}
 
 	/* Allocate new skb */
 	new_skb = alloc_skb(total_len + LL_MAX_HEADER, GFP_ATOMIC);
@@ -374,6 +355,10 @@ struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct
 	if (payload && payload_len > 0) {
 		memcpy(data, payload, payload_len);
 	}
+
+	/* Set transport header AFTER building the packet */
+	/* so that log_tuple_info6 could display port info*/
+	skb_set_transport_header(new_skb, ip6_hdr_len);
 
 	/* Build UDP header */
 	memset(udph, 0, sizeof(struct udphdr));
@@ -407,7 +392,8 @@ struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct
 	fl6.flowi6_proto = IPPROTO_UDP;
 	fl6.daddr = ip6h->daddr;
 	fl6.saddr = ip6h->saddr;
-	fl6.flowi6_oif = skb->sk->sk_bound_dev_if;
+	if (skb->sk)
+		fl6.flowi6_oif = skb->sk->sk_bound_dev_if;
 	fl6.flowi6_mark = skb->mark;
 	fl6.fl6_sport = udph->source;
 	fl6.fl6_dport = udph->dest;

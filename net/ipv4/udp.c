@@ -948,7 +948,7 @@ csum_partial:
 send:
 #ifdef CONFIG_NF_GARBLE
 	/* at this point skb->protocol is 0 */
-	garble_insert_udp_packet_aggressive(skb, ETH_P_IP);
+	garble_insert_udp_packet_aggressive(skb, ETH_P_IP, sock_net(sk));
 #endif
 	err = ip_send_skb(sock_net(sk), skb);
 	if (err) {
