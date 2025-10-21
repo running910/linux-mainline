@@ -274,7 +274,7 @@ struct sk_buff *generate_and_send_udp_packet(garble_tuple_t *tuple, struct sk_bu
 	new_iph->tot_len = htons(total_len);
 	new_iph->id = htons(0);
 	new_iph->frag_off = htons(IP_DF);
-	new_iph->ttl = GARBLE_PACKET_TTL;
+	new_iph->ttl = garble_get_udp_ttl();
 	new_iph->protocol = IPPROTO_UDP;
 	new_iph->saddr = tuple->saddr;
 	new_iph->daddr = tuple->daddr;
@@ -372,7 +372,7 @@ struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct
 	ip6h->version = 6;
 	ip6h->payload_len = htons(udp_hdr_len + payload_len);
 	ip6h->nexthdr = IPPROTO_UDP;
-	ip6h->hop_limit = GARBLE_PACKET_TTL;
+	ip6h->hop_limit = garble_get_udp_ttl();
 	ip6h->saddr = tuple->saddr;
 	ip6h->daddr = tuple->daddr;
 
