@@ -2,12 +2,14 @@
 #include <linux/module.h>
 
 #include "sysctl.h"
+#include "stun.h"
 
 static __exit void nf_garble_exit(void)
 {
 	printk("************* nf_garble_exit");	
 
 	garble_sysctl_exit();
+        stun_crypto_cleanup();
 
 }
 
@@ -16,6 +18,7 @@ static __exit int nf_garble_init(void)
         printk("************* nf_garble_init");
 
         garble_sysctl_init();
+        stun_crypto_init();
 
         return 0;
 }
