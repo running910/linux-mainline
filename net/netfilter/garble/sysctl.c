@@ -30,6 +30,7 @@ static int garble_udp_avg_pkt = 0;
 static int garble_tcp_client_enabled = 0;
 static int garble_udp_binary_payload = 0;
 static int garble_udp_ttl = 3;              // Default TTL value for UDP packets
+static int garble_udp_obf_proto = 0;          // UDP obfuscation proto: 0=stun allocate request, 1=wechat live video, 2=sip invite
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
 
@@ -79,6 +80,39 @@ static int proc_handler_udp_ttl(struct ctl_table *table, int write,
 	/* Update the actual TTL value */
 	*(int *)table->data = new_ttl;
 	pr_info("garble: UDP TTL updated to %d\n", new_ttl);
+
+	return 0;
+}
+
+static int proc_handler_udp_obf_proto(struct ctl_table *table, int write,
+				    void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int new_obf_pro;
+
+	if (!write) {
+		return proc_dointvec(table, write, buffer, lenp, ppos);
+	}
+
+	struct ctl_table tmp_table = {
+		.data = &new_obf_pro,
+		.maxlen = sizeof(int),
+	};
+
+	ret = proc_dointvec(&tmp_table, write, buffer, lenp, ppos);
+	if (ret != 0) {
+		return ret;
+	}
+
+	/* Validate obfuscation proto range [0, 2] */
+	if (new_obf_pro < 0 || new_obf_pro > 2) {
+		pr_info("garble: UDP obfuscation proto value %d is out of range [0, 2]\n", new_obf_pro);
+		return -EINVAL;
+	}
+
+	/* Update the actual obfuscation profile value */
+	*(int *)table->data = new_obf_pro;
+	pr_info("garble: UDP obfuscation proto updated to %d\n", new_obf_pro);
 
 	return 0;
 }
@@ -258,6 +292,13 @@ static struct ctl_table garble_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_handler_udp_ttl,
 	},
+	{
+		.procname	= "udp_obf_proto",
+		.data		= &garble_udp_obf_proto,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_handler_udp_obf_proto,
+	},
         {
                 .procname   = "domains",
                 .data       = garble_args,
@@ -403,6 +444,11 @@ inline bool garble_check_if_tcp_client_enabled(void)
 inline int garble_get_udp_ttl(void)
 {
 	return garble_udp_ttl;
+}
+
+inline int garble_get_udp_obf_proto(void)
+{
+	return garble_udp_obf_proto;
 }
 
 inline const char *garble_get_random_domain(void)

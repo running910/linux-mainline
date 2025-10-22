@@ -57,15 +57,13 @@
 
 inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
 inline unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
-inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len);
-inline unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len);
+inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len);
 
 #else
 
 extern unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
 extern unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
-extern unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len);
-extern unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len);
+extern unsigned char *build_udp_payload(unsigned char *buf, int *out_len);
 
 #endif
 
@@ -315,16 +313,9 @@ void insert_udp_packet(struct sk_buff *skb, int reverse, struct net *net)
 	if (check_if_well_known_udp_port(tuple.dport))
 		return;
 
-	if (garble_check_if_udp_binary_enabled()) {
-		if (!build_payload_from_binary(payload, &payload_len)) {
-			return;
-		}
-	} else {
-		payload_len = sizeof(payload);
-		if (!build_stun_payload(payload, &payload_len)) {
-			return;
-		}
-	}
+	payload_len = sizeof(payload);
+	if (!build_udp_payload(payload, &payload_len))
+		return;
 
 	generate_and_send_udp_packet(&tuple, skb, net, payload, payload_len);
 }
@@ -395,16 +386,9 @@ void insert_udp_packet_v6(struct sk_buff *skb, int reverse, struct net *net)
         if (check_if_well_known_udp_port(tuple.dport))
 		return;
 
-	if (garble_check_if_udp_binary_enabled()) {
-		if (!build_payload_from_binary(payload, &payload_len)) {
-			return;
-		}
-	} else {
-		payload_len = sizeof(payload);
-		if (!build_stun_payload(payload, &payload_len)) {
-			return;
-		}
-	}
+	payload_len = sizeof(payload);
+	if (!build_udp_payload(payload, &payload_len))
+		return;
 
 	generate_and_send_udp_packet_v6(&tuple, skb, net, payload, payload_len);
 }
