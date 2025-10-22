@@ -9,6 +9,7 @@
 #include <net/checksum.h>
 
 #include "sysctl.h"
+#include "stun.h"
 
 inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len)
 {
@@ -55,4 +56,23 @@ inline unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len
 	*out_len = len;
 
 	return buf;
+}
+
+inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
+{
+
+	if (garble_check_if_udp_binary_enabled())
+		return build_payload_from_binary(buf, out_len);
+
+	switch (garble_get_udp_obf_proto()) {
+	case 0:
+		return build_stun_payload(buf, out_len);
+	case 1:
+		return build_wechat_video_call_msg(buf, out_len);
+	case 2:
+	default:
+		return NULL;
+	}
+
+	return NULL;
 }

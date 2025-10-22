@@ -413,10 +413,6 @@ int generate_stun_allocate_request_kernel(uint8_t *packet, int *max_len)
 	return 0;
 }
 
-EXPORT_SYMBOL(generate_stun_allocate_request_kernel);
-EXPORT_SYMBOL(stun_crypto_init);
-EXPORT_SYMBOL(stun_crypto_cleanup);
-
 inline unsigned char *build_stun_payload(unsigned char *buf, int *out_len)
 {
 
