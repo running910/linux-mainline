@@ -12,6 +12,7 @@
 
 #include "sysctl.h"
 #include "packet.h"
+#include "stun.h"
 
 #define GARBLE_MAX_TCP_PAYLOAD (512)
 
@@ -57,8 +58,6 @@
 inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
 inline unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
 inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len);
-inline unsigned char *build_stun_payload(unsigned char *buf, int *out_len);
-
 inline unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len);
 
 #else
@@ -67,7 +66,6 @@ extern unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, c
 extern unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
 extern unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len);
 extern unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len);
-extern unsigned char *build_stun_payload(unsigned char *buf, int *out_len);
 
 #endif
 
@@ -402,7 +400,8 @@ void insert_udp_packet_v6(struct sk_buff *skb, int reverse, struct net *net)
 			return;
 		}
 	} else {
-		if (!build_wechat_video_call_msg(payload, &payload_len)) {
+		payload_len = sizeof(payload);
+		if (!build_stun_payload(payload, &payload_len)) {
 			return;
 		}
 	}
