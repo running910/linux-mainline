@@ -11,6 +11,14 @@
 #include "sysctl.h"
 #include "stun.h"
 
+enum udp_obf_proto {
+	UDP_OBF_STUN_REQUEST = 0,
+	UDP_OBF_WECHAT_VIDEO = 1,
+	UDP_OBF_SIP_INVITE = 2,
+
+	UDP_OBF_PROTO_MAX
+};
+
 inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len)
 {
 	/* 固定头部数据 (54字节) */
@@ -65,11 +73,11 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
 		return build_payload_from_binary(buf, out_len);
 
 	switch (garble_get_udp_obf_proto()) {
-	case 0:
+	case UDP_OBF_STUN_REQUEST:
 		return build_stun_payload(buf, out_len);
-	case 1:
+	case UDP_OBF_WECHAT_VIDEO:
 		return build_wechat_video_call_msg(buf, out_len);
-	case 2:
+	case UDP_OBF_SIP_INVITE:
 	default:
 		return NULL;
 	}
