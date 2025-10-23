@@ -31,6 +31,8 @@ static int garble_tcp_client_enabled = 0;
 static int garble_udp_binary_payload = 0;
 static int garble_udp_ttl = 3;              // Default TTL value for UDP packets
 static int garble_udp_obf_proto = 0;          // UDP obfuscation proto: 0=stun allocate request, 1=wechat live video, 2=sip invite
+static int garble_tcp_ttl = 3;              // Default TTL value for TCP packets
+
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
 
@@ -51,7 +53,7 @@ static void garble_config_free(struct rcu_head *head)
         kfree(cfg);
 }
 
-static int proc_handler_udp_ttl(struct ctl_table *table, int write,
+static int proc_handler_ttl(struct ctl_table *table, int write,
 				void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
@@ -73,13 +75,13 @@ static int proc_handler_udp_ttl(struct ctl_table *table, int write,
 
 	/* Validate TTL range [3, 128] */
 	if (new_ttl < 3 || new_ttl > 128) {
-		pr_info("garble: UDP TTL value %d is out of range [3, 128]\n", new_ttl);
+		pr_info("garble: %s value %d is out of range [3, 128]\n", table->procname, new_ttl);
 		return -EINVAL;
 	}
 
 	/* Update the actual TTL value */
 	*(int *)table->data = new_ttl;
-	pr_info("garble: UDP TTL updated to %d\n", new_ttl);
+	pr_info("garble: %s updated to %d\n", table->procname, new_ttl);
 
 	return 0;
 }
@@ -290,7 +292,14 @@ static struct ctl_table garble_table[] = {
 		.data		= &garble_udp_ttl,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
-		.proc_handler	= proc_handler_udp_ttl,
+		.proc_handler	= proc_handler_ttl,
+	},
+	{
+		.procname	= "tcp_ttl",
+		.data		= &garble_tcp_ttl,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_handler_ttl,
 	},
 	{
 		.procname	= "udp_obf_proto",
@@ -439,6 +448,11 @@ inline int garble_get_tcp_avg_pkt(void)
 inline bool garble_check_if_tcp_client_enabled(void)
 {
 	return garble_tcp_client_enabled;
+}
+
+inline int garble_get_tcp_ttl(void)
+{
+	return garble_tcp_ttl;
 }
 
 inline int garble_get_udp_ttl(void)

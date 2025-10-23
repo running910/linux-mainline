@@ -74,7 +74,7 @@ struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct
 	iph->tot_len = htons(total_len);
 	iph->id = htons(0);
 	iph->frag_off = htons(IP_DF);
-	iph->ttl = GARBLE_PACKET_TTL;
+	iph->ttl = garble_get_tcp_ttl();
 	iph->protocol = IPPROTO_TCP;
 	iph->saddr = tuple->daddr;  // 注意：对调，伪装为对方发出的方向
 	iph->daddr = tuple->saddr;
@@ -173,7 +173,7 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	ip6h->version = 6;
 	ip6h->payload_len = htons(tcp_hdr_len + payload_len);
 	ip6h->nexthdr = IPPROTO_TCP;
-	ip6h->hop_limit = GARBLE_PACKET_TTL;
+	ip6h->hop_limit = garble_get_tcp_ttl();
 	ip6h->saddr = *saddr; 
 	ip6h->daddr = *daddr;
 
