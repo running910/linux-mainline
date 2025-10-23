@@ -10,6 +10,7 @@
 
 #include "sysctl.h"
 #include "stun.h"
+#include "sip.h"
 
 enum udp_obf_proto {
 	UDP_OBF_STUN_REQUEST = 0,
@@ -78,6 +79,7 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
 	case UDP_OBF_WECHAT_VIDEO:
 		return build_wechat_video_call_msg(buf, out_len);
 	case UDP_OBF_SIP_INVITE:
+		return build_sip_payload(buf, out_len);
 	default:
 		return NULL;
 	}

@@ -56,15 +56,15 @@ static int proc_handler_udp_ttl(struct ctl_table *table, int write,
 {
 	int ret;
 	int new_ttl;
+	struct ctl_table tmp_table;
 
 	if (!write) {
 		return proc_dointvec(table, write, buffer, lenp, ppos);
 	}
 
-	struct ctl_table tmp_table = {
-		.data = &new_ttl,
-		.maxlen = sizeof(int),
-	};
+	memset(&tmp_table, 0, sizeof(tmp_table));
+	tmp_table.data = &new_ttl;
+	tmp_table.maxlen = sizeof(int);
 
 	ret = proc_dointvec(&tmp_table, write, buffer, lenp, ppos);
 	if (ret != 0) {
@@ -89,15 +89,15 @@ static int proc_handler_udp_obf_proto(struct ctl_table *table, int write,
 {
 	int ret;
 	int new_obf_pro;
+	struct ctl_table tmp_table;
 
 	if (!write) {
 		return proc_dointvec(table, write, buffer, lenp, ppos);
 	}
 
-	struct ctl_table tmp_table = {
-		.data = &new_obf_pro,
-		.maxlen = sizeof(int),
-	};
+	memset(&tmp_table, 0, sizeof(tmp_table));
+	tmp_table.data = &new_obf_pro;
+	tmp_table.maxlen = sizeof(int);
 
 	ret = proc_dointvec(&tmp_table, write, buffer, lenp, ppos);
 	if (ret != 0) {
