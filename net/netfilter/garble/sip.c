@@ -21,6 +21,8 @@
 #include <linux/string.h>
 #include <linux/random.h>
 
+#include "sysctl.h"
+
 #define BUFFLEN 1200
 
 static const char *sdp_fmt = 
@@ -53,12 +55,12 @@ static const char *sip_fmt =
  *
  * Return: 0 on success, negative error code on failure
  */
-inline int build_sip_payload_msg(unsigned char *buffer, int *len, const char *sip_uri)
+inline int build_sip_payload_msg(unsigned char *buffer, int *len, const char *sip_host)
 {
 	char sip_uri_random[64];
 	char local[64];
 	char sdp_buf[180];
-	char username[5];	/* 4 characters + null terminator */
+	char username[13];	/* 4-12 characters + null terminator */
 	const char *username_ptr;
 	unsigned long rand_ul[5];
 	int len_, buffsize;
@@ -66,6 +68,7 @@ inline int build_sip_payload_msg(unsigned char *buffer, int *len, const char *si
 	u8 random_bytes[2];
 	u8 random_byte;
 	int i;
+	int username_len;
 	const char char_set[] = "abcdefghijklmnopqrstuvwxyz"
 			       "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 			       "0123456789";
@@ -73,36 +76,42 @@ inline int build_sip_payload_msg(unsigned char *buffer, int *len, const char *si
 	/* Generate random values */
 	get_random_bytes(rand_ul, sizeof(rand_ul));
 
-	/* Handle SIP URI */
-	if (sip_uri) {
-		if (strncmp("sip:", sip_uri, 4) != 0) {
-			pr_err("ERROR: Invalid SIP URI (should start with `sip:`): %s\n",
-			       sip_uri);
-			return -EINVAL;
-		}
-		username_ptr = sip_uri + 4;
-	} else {
-		/* Generate random username (4 characters: letters and numbers) */
-		for (i = 0; i < 4; i++) {
-			get_random_bytes(&random_byte, sizeof(random_byte));
-			username[i] = char_set[random_byte % (sizeof(char_set) - 1)];
-		}
-		username[4] = '\0';
-		
-		/* Generate SIP URI with last byte in range 1-254 */
+	/* Generate random username (4-12 characters: letters and numbers) */
+	get_random_bytes(&random_byte, sizeof(random_byte));
+	username_len = 4 + (random_byte % 9);	/* 4-12 range */
+	
+	for (i = 0; i < username_len; i++) {
 		get_random_bytes(&random_byte, sizeof(random_byte));
-		random_byte = (random_byte % 254) + 1;	/* 1-254 range */
-		
+		username[i] = char_set[random_byte % (sizeof(char_set) - 1)];
+	}
+	username[username_len] = '\0';
+	username_ptr = username;
+
+	/* Handle SIP URI generation */
+	if (sip_host) {
+
+		/* SIP URI format: sip:x@y:Port 
+		 * defined in rfc3261, exampes:
+		 * sip:joe.bloggs@212.123.1.213:5060
+		 * sip:support@phonesystem.3cx.com
+		 * sip:22444032@phonesystem.3cx.com
+		 */
+		len_ = snprintf(sip_uri_random, sizeof(sip_uri_random), 
+			       "sip:%s@%s", username, sip_host);
+	} else {
+
+		/* Generate random bytes for IP addresses */
+		get_random_bytes(random_bytes, sizeof(random_bytes));
+		/* Generate SIP URI with last byte in range 1-254 */
+		random_bytes[1] = (random_bytes[1] % 254) + 1;	/* 1-254 range */
 		len_ = snprintf(sip_uri_random, sizeof(sip_uri_random), 
 			       "sip:%s@113.240.%d.%u", username, 
-			       (unsigned int)random_bytes[0] % 256, 
-			       (unsigned int)random_byte);
-		if (len_ < 0 || len_ >= sizeof(sip_uri_random)) {
-			pr_err("ERROR: snprintf failed for SIP URI\n");
-			return -EINVAL;
-		}
-		sip_uri = sip_uri_random;
-		username_ptr = username;
+			       (unsigned int)random_bytes[0], (unsigned int)random_bytes[1]);
+	}
+
+	if (len_ < 0 || len_ >= sizeof(sip_uri_random)) {
+		pr_err("ERROR: snprintf failed for SIP URI\n");
+		return -EINVAL;
 	}
 
 	/* Generate local IP address with last byte in range 1-254 */
@@ -131,9 +140,9 @@ inline int build_sip_payload_msg(unsigned char *buffer, int *len, const char *si
 	/* Generate final SIP INVITE message */
 	buffsize = *len;
 	len_ = snprintf((char *)buffer, buffsize, sip_fmt,
-		       sip_uri, local, rand_ul[2], 
+		       sip_uri_random, local, rand_ul[2], 
 		       local, rand_ul[3], 
-		       username_ptr, sip_uri, 
+		       username_ptr, sip_uri_random, 
 		       rand_ul[4], local, local, 
 		       content_length, sdp_buf);
 	
@@ -151,7 +160,7 @@ inline int build_sip_payload_msg(unsigned char *buffer, int *len, const char *si
 
 inline unsigned char *build_sip_payload(unsigned char *buf, int *out_len)
 {
-	if (build_sip_payload_msg(buf, out_len, NULL) == 0)
+	if (build_sip_payload_msg(buf, out_len, garble_get_udp_extra()) == 0)
 		return buf;
 	else
 		return NULL;

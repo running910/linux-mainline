@@ -23,6 +23,7 @@ inline bool garble_check_if_udp_binary_enabled(void);
 inline int garble_get_udp_ttl(void);
 inline int garble_get_tcp_ttl(void);
 inline int garble_get_udp_obf_proto(void);
+inline const char *garble_get_udp_extra(void);
 
 #else
 extern const char *garble_get_random_domain(void);
@@ -42,5 +43,6 @@ extern bool garble_check_if_udp_binary_enabled(void);
 extern int garble_get_udp_ttl(void);
 extern int garble_get_tcp_ttl(void);
 extern int garble_get_udp_obf_proto(void);
+extern const char *garble_get_udp_extra(void);
 
 #endif

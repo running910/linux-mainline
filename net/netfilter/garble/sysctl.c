@@ -11,6 +11,7 @@
 #define DOMAINS_BUF_LEN 512
 #define MAX_DOMAINS     20
 #define UDP_PAYLOAD_MAX_LEN 4096
+#define UDP_EXTRA_BUF_LEN 512
 
 struct garble_config {
 	char domain_buf[DOMAINS_BUF_LEN];       // 域名参数buffer，会被strtep切开
@@ -29,10 +30,10 @@ static int garble_udp_aggressive = 0;
 static int garble_udp_avg_pkt = 0;
 static int garble_tcp_client_enabled = 0;
 static int garble_udp_binary_payload = 0;
-static int garble_udp_ttl = 3;              // Default TTL value for UDP packets
-static int garble_udp_obf_proto = 0;          // UDP obfuscation proto: 0=stun allocate request, 1=wechat live video, 2=sip invite
-static int garble_tcp_ttl = 3;              // Default TTL value for TCP packets
-
+static int garble_udp_ttl = 3;                          // Default TTL value for UDP packets
+static int garble_udp_obf_proto = 0;                    // UDP obfuscation proto: 0=stun allocate request, 1=wechat live video, 2=sip invite
+static int garble_tcp_ttl = 3;                          // Default TTL value for TCP packets
+static char garble_udp_extra[UDP_EXTRA_BUF_LEN] ={0};   // UDP extra configuration string
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
 
@@ -308,6 +309,13 @@ static struct ctl_table garble_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_handler_udp_obf_proto,
 	},
+	{
+		.procname	= "udp_extra",
+		.data		= garble_udp_extra,
+		.maxlen		= UDP_EXTRA_BUF_LEN,
+		.mode		= 0644,
+		.proc_handler	= proc_dostring,
+	},
         {
                 .procname   = "domains",
                 .data       = garble_args,
@@ -487,5 +495,14 @@ inline const char *garble_get_udp_payload(int *len)
 	} else {
 		*len = 0;
 		return NULL;
+	}
+}
+
+inline const char *garble_get_udp_extra(void)
+{
+	if (garble_udp_extra[0] == '\0') {
+		return NULL;
+	} else {
+		return garble_udp_extra;
 	}
 }
