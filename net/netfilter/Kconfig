@@ -1027,8 +1027,8 @@ menu "MASQUERADE options"
 	depends on NETFILTER_XT_TARGET_MASQUERADE
 
 config NF_NAT_MASQ_NATHOLE
-	bool "NAT hole punching support" if NETFILTER_XT_TARGET_MASQUERADE != n
-	default y
+	tristate "NAT hole punching support" if NETFILTER_XT_TARGET_MASQUERADE != n
+	default m
 	depends on NETFILTER_XT_TARGET_MASQUERADE
 	help
 	  Enable NAT hole punching support for MASQUERADE target.
