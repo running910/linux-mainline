@@ -403,6 +403,7 @@ void garble_insert_udp_packet(struct sk_buff *skb, int reverse, struct net *net)
         else if (skb->protocol == htons(ETH_P_IPV6))
 		insert_udp_packet_v6(skb, reverse, net);
 }
+EXPORT_SYMBOL(garble_insert_udp_packet);
 
 void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol, struct net *net)
 {

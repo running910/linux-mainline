@@ -300,6 +300,8 @@ int nf_nat_masquerade_inet_register_notifiers(void)
 {
 	int ret = 0;
 
+	nathole_init(nf_nat_setup_info);
+
 	mutex_lock(&masq_mutex);
 	if (WARN_ON_ONCE(masq_refcnt == UINT_MAX)) {
 		ret = -EOVERFLOW;

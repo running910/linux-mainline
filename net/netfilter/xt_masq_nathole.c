@@ -2,10 +2,16 @@
 #include <net/netfilter/nf_nat_masquerade.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_core.h>
+#include <net/netfilter/nf_masq_nathole.h>
 
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
+MODULE_AUTHOR("Zhixing Chen <running910@gmail.com>");
+MODULE_DESCRIPTION("Xtables: automatic-address SNAT with nathole enabled");
 
 static int nathole_help(struct sk_buff *skb, unsigned int protoff, struct nf_conn *ct, enum ip_conntrack_info ctinfo);
 
+static nat_setup_fn_t nat_setup_fn = NULL;
 
 static struct nf_conntrack_expect_policy nathole_expect_policy __read_mostly = {
 	// 限定对应ct的NF_CT_EXPECT_CLASS_DEFAULT类的expectation数量
@@ -58,7 +64,7 @@ static void nathole_expect(struct nf_conn *ct, struct nf_conntrack_expect *exp)
 	range.max_proto = exp->saved_proto;
 	range.min_addr = exp->saved_addr;
 	range.max_addr = exp->saved_addr;
-	nf_nat_setup_info(ct, &range, NF_NAT_MANIP_DST);
+	nat_setup_fn(ct, &range, NF_NAT_MANIP_DST);
 
 	log_ct_pref(ct, "after ct->master %p", ct->master);
 }
@@ -205,6 +211,7 @@ inline bool check_if_need_nathole(struct nf_conn *ct, __be32 newsrc)
 		return false;
 	}
 }
+EXPORT_SYMBOL(check_if_need_nathole);
 
 inline unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const struct nf_nat_range2 *range, __be32 newsrc)
 {
@@ -244,7 +251,7 @@ inline unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const st
 	log_ct_pref(ct, "ct before change");
 
 	/* Set ct helper */
-	ret = nf_nat_setup_info(ct, &newrange, NF_NAT_MANIP_SRC);
+	ret = nat_setup_fn(ct, &newrange, NF_NAT_MANIP_SRC);
 	if (ret == NF_ACCEPT && !exp) {
 		struct nf_conn_help *help = nfct_help(ct);
 
@@ -262,8 +269,16 @@ inline unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const st
 
 	return ret;
 }
+EXPORT_SYMBOL(do_nathole);
+
+void nathole_init(nat_setup_fn_t setup_func)
+{
+	nat_setup_fn = setup_func;
+}
+EXPORT_SYMBOL(nathole_init);
 
 void nathole_exit(void)
 {
 	nf_conntrack_helper_unregister(&nathole_helper);
 }
+EXPORT_SYMBOL(nathole_exit);
