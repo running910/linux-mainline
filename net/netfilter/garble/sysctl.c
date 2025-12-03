@@ -7,10 +7,11 @@
 #include <linux/random.h>
 #include <linux/proc_fs.h>
 
+#include "sysctl.h"
+
 
 #define DOMAINS_BUF_LEN 512
 #define MAX_DOMAINS     20
-#define UDP_PAYLOAD_MAX_LEN 4096
 #define UDP_EXTRA_BUF_LEN 512
 
 struct garble_config {
@@ -29,6 +30,7 @@ static int garble_tcp_avg_pkt = 0;
 static int garble_udp_aggressive = 0;
 static int garble_udp_avg_pkt = 0;
 static int garble_tcp_client_enabled = 0;
+static int garble_tcp_binary_payload = 0;
 static int garble_udp_binary_payload = 0;
 static int garble_udp_ttl = 3;                          // Default TTL value for UDP packets
 static int garble_udp_obf_proto = 0;                    // UDP obfuscation proto: 0=stun allocate request, 1=wechat live video, 2=sip invite
@@ -40,9 +42,17 @@ static struct garble_config __rcu *garble_cfg_ptr = NULL;
 static DEFINE_SPINLOCK(garble_cfg_lock);
 
 static struct {
-	char data[UDP_PAYLOAD_MAX_LEN];
+	char data[GARBLE_MAX_UDP_PAYLOAD];
 	int len;
 } udp_payload_data = {
+	.len = 0,
+	.data = {0}
+};
+
+static struct {
+	char data[GARBLE_MAX_TCP_PAYLOAD];
+	int len;
+} tcp_payload_data = {
 	.len = 0,
 	.data = {0}
 };
@@ -182,7 +192,7 @@ static ssize_t udp_payload_read(struct file *file, char __user *buf,
 {
 	ssize_t ret;
 
-	if (*ppos >= UDP_PAYLOAD_MAX_LEN)
+	if (*ppos >= GARBLE_MAX_UDP_PAYLOAD)
 		return 0;
 
 	if (*ppos >= udp_payload_data.len) {
@@ -205,7 +215,7 @@ static ssize_t udp_payload_read(struct file *file, char __user *buf,
 static ssize_t udp_payload_write(struct file *file, const char __user *buf,
 				 size_t count, loff_t *ppos)
 {
-	if (count > UDP_PAYLOAD_MAX_LEN)
+	if (count > GARBLE_MAX_UDP_PAYLOAD)
 		return -EFBIG;
 
 	if (copy_from_user(udp_payload_data.data, buf, count)) {
@@ -222,6 +232,53 @@ static ssize_t udp_payload_write(struct file *file, const char __user *buf,
 static const struct proc_ops udp_payload_proc_ops = {
 	.proc_read	= udp_payload_read,
 	.proc_write	= udp_payload_write,
+};
+
+static ssize_t tcp_payload_read(struct file *file, char __user *buf,
+				size_t count, loff_t *ppos)
+{
+	ssize_t ret;
+
+	if (*ppos >= GARBLE_MAX_TCP_PAYLOAD)
+		return 0;
+
+	if (*ppos >= tcp_payload_data.len) {
+		return 0;
+	}
+
+	if (count > tcp_payload_data.len - *ppos)
+		count = tcp_payload_data.len - *ppos;
+
+	if (copy_to_user(buf, tcp_payload_data.data + *ppos, count)) {
+		return -EFAULT;
+	}
+
+	*ppos += count;
+	ret = count;
+
+	return ret;
+}
+
+static ssize_t tcp_payload_write(struct file *file, const char __user *buf,
+				 size_t count, loff_t *ppos)
+{
+	if (count > GARBLE_MAX_TCP_PAYLOAD)
+		return -EFBIG;
+
+	if (copy_from_user(tcp_payload_data.data, buf, count)) {
+		return -EFAULT;
+	}
+
+	tcp_payload_data.len = count;
+	*ppos = count;
+
+	pr_info("garble: tcp_payload updated, length = %zu\n", count);
+	return count;
+}
+
+static const struct proc_ops tcp_payload_proc_ops = {
+	.proc_read	= tcp_payload_read,
+	.proc_write	= tcp_payload_write,
 };
 
 static struct ctl_table garble_table[] = {
@@ -263,6 +320,13 @@ static struct ctl_table garble_table[] = {
 	{
 		.procname	= "enable_tcp_client",
 		.data		= &garble_tcp_client_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "enable_tcp_binary_payload",
+		.data		= &garble_tcp_binary_payload,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
@@ -348,6 +412,7 @@ static struct ctl_table garble_net_root[] = {
 static struct ctl_table_header *garble_sysctl_header;
 static struct proc_dir_entry *garble_proc_dir;
 static struct proc_dir_entry *udp_payload_proc_entry;
+static struct proc_dir_entry *tcp_payload_proc_entry;
 
 int garble_sysctl_init(void)
 {
@@ -373,6 +438,14 @@ int garble_sysctl_init(void)
 		return -ENOMEM;
 	}
 
+	tcp_payload_proc_entry = proc_create("tcp_payload", 0644, garble_proc_dir, &tcp_payload_proc_ops);
+	if (!tcp_payload_proc_entry) {
+		pr_err("garble: failed to create /proc/garble/tcp_payload entry\n");
+		remove_proc_entry("udp_payload", garble_proc_dir);
+		remove_proc_entry("garble", NULL);
+		return -ENOMEM;
+	}
+
         return 0;
 }
 
@@ -384,6 +457,8 @@ void garble_sysctl_exit(void)
 	unregister_sysctl_table(garble_sysctl_header);
 
 	/* Remove procfs entries */
+	if (tcp_payload_proc_entry)
+		remove_proc_entry("tcp_payload", garble_proc_dir);
 	if (udp_payload_proc_entry)
 		remove_proc_entry("udp_payload", garble_proc_dir);
 	if (garble_proc_dir)
@@ -400,7 +475,7 @@ void garble_sysctl_exit(void)
 
 inline bool garble_check_if_tcp_enabled(void)
 {
-	return garble_enabled || garble_http_enabled;
+	return garble_enabled || garble_http_enabled || garble_tcp_binary_payload;
 }
 
 inline bool garble_check_if_tcp_aggressive(void)
@@ -425,12 +500,17 @@ inline bool garble_check_if_http_enabled(void)
 
 inline bool garble_check_if_tcp_disabled(void)
 {
-	return !garble_enabled && !garble_http_enabled;
+	return !garble_enabled && !garble_http_enabled && !garble_tcp_binary_payload;
 }
 
 inline bool garble_check_if_udp_enabled(void)
 {
 	return garble_udp_enabled;
+}
+
+inline bool garble_check_if_tcp_binary_enabled(void)
+{
+	return garble_tcp_binary_payload;
 }
 
 inline bool garble_check_if_udp_binary_enabled(void)
@@ -492,6 +572,17 @@ inline const char *garble_get_udp_payload(int *len)
 	if (udp_payload_data.len > 0) {
 		*len = udp_payload_data.len;
 		return udp_payload_data.data;
+	} else {
+		*len = 0;
+		return NULL;
+	}
+}
+
+inline const char *garble_get_tcp_payload(int *len)
+{
+	if (tcp_payload_data.len > 0) {
+		*len = tcp_payload_data.len;
+		return tcp_payload_data.data;
 	} else {
 		*len = 0;
 		return NULL;

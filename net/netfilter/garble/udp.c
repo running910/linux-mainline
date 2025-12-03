@@ -57,7 +57,7 @@ inline unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len
 	int len;
 	unsigned char *tmp;
 
-	tmp = (unsigned char *)garble_get_udp_payload((size_t *)&len);
+	tmp = (unsigned char *)garble_get_udp_payload(&len);
 	if (!tmp)
 		return NULL;
 

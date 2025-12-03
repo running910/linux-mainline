@@ -14,10 +14,6 @@
 #include "packet.h"
 #include "stun.h"
 
-#define GARBLE_MAX_TCP_PAYLOAD (512)
-
-#define GARBLE_MAX_UDP_PAYLOAD (1472)
-
 
 // 127.0.0.0 -> 127.255.255.255
 #define LOOPBACK_MASK    0xff000000
@@ -143,10 +139,29 @@ static bool check_local_traffic_v6(const struct in6_addr *sip, const struct in6_
         return false;
 }
 
+inline unsigned char *build_tcp_payload_from_binary(unsigned char *buf, int *out_len)
+{
+	int len;
+	unsigned char *tmp;
+
+	tmp = (unsigned char *)garble_get_tcp_payload(&len);
+	if (!tmp)
+		return NULL;
+
+	memcpy(buf, tmp, len);
+	*out_len = len;
+
+	return buf;
+}
+
 static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_len)
 {
         int mode;
         const char *domain = NULL;
+
+	if (garble_check_if_tcp_binary_enabled()) {
+		return build_tcp_payload_from_binary(buf, out_len);
+        }
 
         if (garble_check_if_tcp_double_enabled()) {
                 mode = prandom_u32() % 2;
@@ -183,8 +198,8 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
         int payload_len = sizeof(payload);
         //__log("obvious new connection is comming saddr %x daddr %x sport %d dport %d sk %x",saddr, daddr, sport, dport, sk);
 
-	 if (!saddr || !daddr || !sport || !dport || !sk)
-                return;
+	if (!saddr || !daddr || !sport || !dport || !sk)
+                return;	
 
         if (garble_check_if_tcp_disabled())
                 return;
