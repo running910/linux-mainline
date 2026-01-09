@@ -15,38 +15,35 @@
 #include "stun.h"
 
 
-// 127.0.0.0 -> 127.255.255.255
-#define LOOPBACK_MASK    0xff000000
-#define LOOPBACK_NETWORK 0x7f000000
+#define LOOPBACK_MASK           0Xff000000
+#define LOOPBACK_ADDR		0x7f000000
 
-#define IN6_IS_ADDR_LOOPBACK(a) \
-        (__extension__                                                        \
-        ({ const struct in6_addr *__a = (const struct in6_addr *) (a);        \
-        __a->s6_addr32[0] == 0                                                \
-        && __a->s6_addr32[1] == 0                                                     \
-        && __a->s6_addr32[2] == 0                                                     \
-        && __a->s6_addr32[3] == htonl (1); }))
+// Class A network private IP range (10.0.0.0/8)
+#define A_PRIVATE_START         0x0a000000  // 10.0.0.0
+#define A_PRIVATE_END           0x0affffff  // 10.255.255.255
 
-#define IN6_IS_ADDR_V4MAPPED_LOOPBACK(a) \
-        (__extension__({ const struct in6_addr *__a = (const struct in6_addr *) (a);          \
-        __a->s6_addr32[0] == 0                                        \
-        && __a->s6_addr32[1] == 0                                     \
-        && __a->s6_addr32[2] == htonl (0xffff)        \
-        && __a->s6_addr32[3] == htonl (0x7f000001); }))
+// Class B network private IP range 
+#define B_PRIVATE_START         0xAC100000  // 172.16.0.0 (0xAC = 172)
+#define B_PRIVATE_END           0xAC1FFFFF  // 172.31.255.255
 
-#define IN6_IS_CONN_LOCAL(source, dest) \
-        (__extension__({ const struct in6_addr *__s = (const struct in6_addr *) (source);             \
-        const struct in6_addr *__d = (const struct in6_addr *) (dest);        \
-        __s->s6_addr32[0] == __d->s6_addr32[0]                  \
-        && __s->s6_addr32[1] == __d->s6_addr32[1]                       \
-        && __s->s6_addr32[2] == __d->s6_addr32[2]                       \
-        && __s->s6_addr32[3] == __d->s6_addr32[3]; }))
+// Class C network private IP range
+#define C_PRIVATE_START         0xC0A80000  // 192.168.0.0
+#define C_PRIVATE_END           0xC0A8FFFF  // 192.168.255.255
 
-#define IN6_IS_ADDR_V4MAPPED(a) \
-        (__extension__({ const struct in6_addr *__a = (const struct in6_addr *) (a);          \
-        __a->s6_addr32[0] == 0                                        \
-        && __a->s6_addr32[1] == 0                                     \
-        && __a->s6_addr32[2] == htonl (0xffff); }))
+
+#define IPV6_LOOPBACK_0         0x00000000
+#define IPV6_LOOPBACK_1         0x00000000  
+#define IPV6_LOOPBACK_2         0x00000000
+#define IPV6_LOOPBACK_3         0x00000001
+
+#define IPV6_ULA_MASK_0         0xfe000000
+#define IPV6_ULA_NET_0          0xfc000000
+
+#define IPV6_LINK_LOCAL_MASK_0  0xffc00000
+#define IPV6_LINK_LOCAL_NET_0   0xfe800000
+
+#define IPV6_MULTICAST_MASK_0   0xff000000
+#define IPV6_MULTICAST_NET_0    0xff000000
 
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
@@ -103,17 +100,86 @@ garble_tuple_t *extract_tuple_info(struct sk_buff *skb, garble_tuple_t *tuple)
 	return tuple;
 }
 
+int check_local_ipaddr(u32 ipaddr)
+{
+	u32 local_order_ipaddr = ntohl(ipaddr);
+
+	if ((local_order_ipaddr & LOOPBACK_MASK) == LOOPBACK_ADDR) {
+		//__log("garble: loopback ipaddr %pI4", &ipaddr);
+		return true;
+	}
+
+	if ((local_order_ipaddr >= A_PRIVATE_START) && (local_order_ipaddr <= A_PRIVATE_END)) {
+		//__log("garble: Class A private ipaddr %pI4", &ipaddr);
+		return true;
+	}
+
+	if ((local_order_ipaddr >= B_PRIVATE_START) && (local_order_ipaddr <= B_PRIVATE_END)) {
+		//__log("garble: Class B private ipaddr %pI4", &ipaddr);
+		return true;
+	}
+
+	if ((local_order_ipaddr >= C_PRIVATE_START) && (local_order_ipaddr <= C_PRIVATE_END)) {
+		//__log("garble: Class C private ipaddr %pI4", &ipaddr);
+		return true;
+	}
+
+	return false;
+}
 
 static bool check_local_traffic(u32 sip, u32 dip)
 {
-	if ((ntohl(sip) & LOOPBACK_MASK) == LOOPBACK_NETWORK)
-		return true;
-
-	if ((ntohl(dip) & LOOPBACK_MASK) == LOOPBACK_NETWORK)
-		return true;
-
 	if (sip == dip) {
 		return true;
+	}
+
+	// Check if destination is local/private address
+	if (check_local_ipaddr(dip)) {
+		//pr_info("garble: local/private destination traffic, sip=%pI4 dip=%pI4\n", &sip, &dip);
+		return true;
+	}
+
+	return false;
+}
+
+static int check_local_ipaddr_v6(const struct in6_addr *ipaddr)
+{
+	u32 *addr = (u32 *)ipaddr->s6_addr32;
+	u32 addr0 = ntohl(addr[0]);
+	u32 addr1 = ntohl(addr[1]);
+	u32 addr2 = ntohl(addr[2]);
+	u32 addr3 = ntohl(addr[3]);
+
+	/* Check loopback address (::1/128) */
+	if (addr0 == IPV6_LOOPBACK_0 && addr1 == IPV6_LOOPBACK_1 && 
+		addr2 == IPV6_LOOPBACK_2 && addr3 == IPV6_LOOPBACK_3) {
+		//__log("garble: IPv6 loopback address %pI6c", ipaddr);
+		return true;
+	}
+
+	/* Check unique local address (FC00::/7) */
+	if ((addr0 & IPV6_ULA_MASK_0) == IPV6_ULA_NET_0) {
+		//__log("garble: IPv6 unique local address (ULA) %pI6c", ipaddr);
+		return true;
+	}
+
+	/* Check link-local address (FE80::/10) */
+	if ((addr0 & IPV6_LINK_LOCAL_MASK_0) == IPV6_LINK_LOCAL_NET_0) {
+		//__log("garble: IPv6 link-local address %pI6c", ipaddr);
+		return true;
+	}
+
+	/* Check multicast address (FF00::/8) */
+	if ((addr0 & IPV6_MULTICAST_MASK_0) == IPV6_MULTICAST_NET_0) {
+		//__log("garble: IPv6 multicast address %pI6c", ipaddr);
+		return true;
+	}
+
+	/* Check IPv4-mapped IPv6 address (::FFFF:0:0/96) */
+	if (addr0 == 0x00000000 && addr1 == 0x00000000 && addr2 == 0xffff0000) {
+		//__log("garble: IPv4-mapped IPv6 address %pI6c", ipaddr);
+		/* Check embedded IPv4 address */
+		return check_local_ipaddr(addr3);
 	}
 
 	return false;
@@ -121,22 +187,7 @@ static bool check_local_traffic(u32 sip, u32 dip)
 
 static bool check_local_traffic_v6(const struct in6_addr *sip, const struct in6_addr *dip)
 {
-
-        if (IN6_IS_ADDR_LOOPBACK(sip) || IN6_IS_ADDR_LOOPBACK(dip))
-                return true;
-#if 0
-        if (IN6_IS_ADDR_V4MAPPED_LOOPBACK(sip) || IN6_IS_ADDR_V4MAPPED_LOOPBACK(dip))
-                return true;
-#endif
-        if (IN6_IS_CONN_LOCAL(sip, dip))
-                return true;
-#if 0
-        // something needs to be paied attention here
-        if (IN6_IS_ADDR_V4MAPPED(sip) || IN6_IS_ADDR_V4MAPPED(dip))
-                return false;
-#endif
-
-        return false;
+	return check_local_ipaddr_v6(dip);
 }
 
 inline unsigned char *build_tcp_payload_from_binary(unsigned char *buf, int *out_len)
@@ -204,14 +255,12 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
         if (garble_check_if_tcp_disabled())
                 return;
 
-        // 与5.10内核的garble模块保持兼容，这里指的是
-        // 远端发来的包的五元组，因此IP地址与端口对调
-        tuple.daddr = saddr;
-        tuple.saddr = daddr;
-        tuple.dport = sport;
-        tuple.sport = dport;
+        tuple.daddr = daddr;
+        tuple.saddr = saddr;
+        tuple.dport = dport;
+        tuple.sport = sport;
 
-        if (check_local_traffic(tuple.saddr, tuple.daddr))
+      	if (check_local_traffic(tuple.saddr, tuple.daddr))
                 return;
 
         if (!generate_tcp_payload(payload, &payload_len))

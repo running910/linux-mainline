@@ -56,8 +56,8 @@ struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct
 
 	// 构造 TCP 头
 	memset(tcph, 0, sizeof(struct tcphdr));
-	tcph->source = tuple->dport;
-	tcph->dest = tuple->sport;
+	tcph->source = tuple->sport;
+	tcph->dest = tuple->dport;
 	tcph->seq = htonl(1);  // 随便填个非零
 	tcph->ack_seq = htonl(1);
 	tcph->doff = tcp_hdr_len >> 2;
@@ -94,8 +94,8 @@ struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct
 	ip_send_check(iph);  // 计算 IP checksum
 
 	memset(&fl4, 0, sizeof(fl4));
-	fl4.daddr = iph->daddr;
-	fl4.saddr = iph->saddr;
+	fl4.daddr = iph->saddr;
+	fl4.saddr = iph->daddr;
 	fl4.flowi4_proto = IPPROTO_TCP;
 	fl4.flowi4_tos = iph->tos;
 
