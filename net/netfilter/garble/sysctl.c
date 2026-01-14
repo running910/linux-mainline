@@ -6,6 +6,8 @@
 #include <linux/slab.h>
 #include <linux/random.h>
 #include <linux/proc_fs.h>
+#include <linux/uaccess.h>
+#include <linux/version.h>
 
 #include "sysctl.h"
 
@@ -229,10 +231,18 @@ static ssize_t udp_payload_write(struct file *file, const char __user *buf,
 	return count;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
 static const struct proc_ops udp_payload_proc_ops = {
 	.proc_read	= udp_payload_read,
 	.proc_write	= udp_payload_write,
 };
+#else
+static const struct file_operations udp_payload_proc_ops = {
+	.owner		= THIS_MODULE,
+	.read		= udp_payload_read,
+	.write		= udp_payload_write,
+};
+#endif
 
 static ssize_t tcp_payload_read(struct file *file, char __user *buf,
 				size_t count, loff_t *ppos)
@@ -276,10 +286,18 @@ static ssize_t tcp_payload_write(struct file *file, const char __user *buf,
 	return count;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
 static const struct proc_ops tcp_payload_proc_ops = {
 	.proc_read	= tcp_payload_read,
 	.proc_write	= tcp_payload_write,
 };
+#else
+static const struct file_operations tcp_payload_proc_ops = {
+	.owner		= THIS_MODULE,
+	.read		= tcp_payload_read,
+	.write		= tcp_payload_write,
+};
+#endif
 
 static struct ctl_table garble_table[] = {
         {
