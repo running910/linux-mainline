@@ -1,21 +1,24 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 
-#include "garble_sysctl.h"
+#include "sysctl.h"
+#include "stun.h"
 
 static __exit void nf_garble_exit(void)
 {
-	__log("************* nf_garble_exit");	
+	printk("************* nf_garble_exit");	
 
 	garble_sysctl_exit();
+        stun_crypto_cleanup();
 
 }
 
 static __exit int nf_garble_init(void)
 {
-        __log("************* nf_garble_init");
+        printk("************* nf_garble_init");
 
         garble_sysctl_init();
+        stun_crypto_init();
 
         return 0;
 }
