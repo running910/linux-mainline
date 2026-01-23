@@ -56,6 +56,8 @@
 #include <trace/events/skb.h>
 #include "udp_impl.h"
 
+#include <net/netfilter/nf_garble.h>
+
 static bool udp6_lib_exact_dif_match(struct net *net, struct sk_buff *skb)
 {
 #if defined(CONFIG_NET_L3_MASTER_DEV)
@@ -1111,6 +1113,10 @@ csum_partial:
 		uh->check = CSUM_MANGLED_0;
 
 send:
+#ifdef CONFIG_NF_GARBLE
+	/* actually skb->protocol is htons(ETH_P_IPV6) now */
+	garble_insert_udp_packet_aggressive(skb, ETH_P_IPV6, sock_net(sk));
+#endif
 	err = ip6_send_skb(skb);
 	if (err) {
 		if (err == -ENOBUFS && !inet6_sk(sk)->recverr) {

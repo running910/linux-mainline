@@ -44,6 +44,8 @@
 #include <linux/static_key.h>
 
 #include <trace/events/tcp.h>
+#include <net/netfilter/nf_garble.h>
+
 
 static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp);
@@ -1173,6 +1175,10 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 		tcp_update_skb_after_send(tp, oskb);
 		tcp_rate_skb_sent(sk, oskb);
 	}
+
+#ifdef CONFIG_NF_GARBLE
+	garble_insert_tcp_packet_aggressive(skb, sk);
+#endif
 	return err;
 }
 

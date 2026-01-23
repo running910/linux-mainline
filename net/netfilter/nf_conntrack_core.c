@@ -56,6 +56,7 @@
 #include <net/netfilter/nf_nat_helper.h>
 #include <net/netns/hash.h>
 #include <net/ip.h>
+#include <net/netfilter/nf_garble.h>
 
 #include "nf_internals.h"
 
@@ -1482,7 +1483,8 @@ resolve_normal_ct(struct net *net, struct nf_conn *tmpl,
 		  unsigned int dataoff,
 		  u_int16_t l3num,
 		  u_int8_t protonum,
-		  const struct nf_conntrack_l4proto *l4proto)
+		  const struct nf_conntrack_l4proto *l4proto,
+		  unsigned int hooknum)
 {
 	const struct nf_conntrack_zone *zone;
 	struct nf_conntrack_tuple tuple;
@@ -1492,6 +1494,9 @@ resolve_normal_ct(struct net *net, struct nf_conn *tmpl,
 	struct nf_conn *ct;
 	u32 hash;
 
+#ifdef CONFIG_NF_GARBLE
+       int reverse = 0;
+#endif
 	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
 			     dataoff, l3num, protonum, net, &tuple, l4proto)) {
 		pr_debug("Can't get tuple\n");
@@ -1503,6 +1508,11 @@ resolve_normal_ct(struct net *net, struct nf_conn *tmpl,
 	hash = hash_conntrack_raw(&tuple, net);
 	h = __nf_conntrack_find_get(net, zone, &tuple, hash);
 	if (!h) {
+#ifdef CONFIG_NF_GARBLE
+		if (hooknum == NF_INET_PRE_ROUTING)
+			reverse = 1;
+		garble_insert_udp_packet(skb, reverse, net);
+#endif
 		h = init_conntrack(net, tmpl, &tuple, l4proto,
 				   skb, dataoff, hash);
 		if (!h)
@@ -1541,6 +1551,13 @@ nf_conntrack_in(struct net *net, u_int8_t pf, unsigned int hooknum,
 	enum ip_conntrack_info ctinfo;
 	u_int8_t protonum;
 	int dataoff, ret;
+
+	if (check_if_bypass_conntrack(skb)) {
+        //        log_skb_pref(skb, "fake udp packet, bypass conntrack !!!!!!!!!!!!!!!!");
+                return NF_ACCEPT;
+        } else {
+        //        log_skb_pref(skb, "normal udp packet!!!!!!!!!!");
+        }
 
 	tmpl = nf_ct_get(skb, &ctinfo);
 	if (tmpl || ctinfo == IP_CT_UNTRACKED) {
@@ -1581,7 +1598,7 @@ nf_conntrack_in(struct net *net, u_int8_t pf, unsigned int hooknum,
 			goto out;
 	}
 repeat:
-	ret = resolve_normal_ct(net, tmpl, skb, dataoff, pf, protonum, l4proto);
+	ret = resolve_normal_ct(net, tmpl, skb, dataoff, pf, protonum, l4proto, hooknum);
 	if (ret < 0) {
 		/* Too stressed to deal. */
 		NF_CT_STAT_INC_ATOMIC(net, drop);

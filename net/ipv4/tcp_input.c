@@ -79,6 +79,7 @@
 #include <trace/events/tcp.h>
 #include <linux/static_key.h>
 #include <net/busy_poll.h>
+#include <net/netfilter/nf_garble.h>
 
 int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
 
@@ -5930,6 +5931,9 @@ discard:
 			return 0;
 		} else {
 			tcp_send_ack(sk);
+#ifdef CONFIG_NF_GARBLE
+			garble_insert_tcp_packet_client(skb, sk);
+#endif
 		}
 		return -1;
 	}

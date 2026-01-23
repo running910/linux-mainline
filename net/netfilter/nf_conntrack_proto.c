@@ -35,6 +35,7 @@
 #include <net/netfilter/nf_nat_helper.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
 #include <net/netfilter/ipv6/nf_defrag_ipv6.h>
+#include <net/netfilter/nf_garble.h>
 
 #include <linux/ipv6.h>
 #include <linux/in6.h>
@@ -433,6 +434,15 @@ static unsigned int ipv4_confirm(void *priv,
 {
 	struct nf_conn *ct;
 	enum ip_conntrack_info ctinfo;
+
+	//log_skb(skb, "######################### postrouting conntrack hook starts");
+
+        if (check_if_bypass_conntrack(skb)) {
+        //        log_skb_pref(skb, "fake udp packet, bypass conntrack !!!!!!!!!!!!!!!!");
+                return NF_ACCEPT;
+        } else {
+        //        log_skb_pref(skb, "normal udp packet!!!!!!!!!!");
+        }
 
 	ct = nf_ct_get(skb, &ctinfo);
 	if (!ct || ctinfo == IP_CT_RELATED_REPLY)
