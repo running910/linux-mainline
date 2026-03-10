@@ -981,7 +981,10 @@ static int tcp_v4_send_synack(const struct sock *sk, struct dst_entry *dst,
 		return -1;
 
 #ifdef CONFIG_NF_GARBLE
-	garble_insert_tcp_packet(ireq->ir_loc_addr, ireq->ir_rmt_addr, htons(ireq->ir_num), ireq->ir_rmt_port, sk);
+	if (sk)
+		garble_insert_tcp_packet(ireq->ir_loc_addr, 
+						ireq->ir_rmt_addr, htons(ireq->ir_num), 
+						ireq->ir_rmt_port, sock_net(sk));
 #endif
 
 	skb = tcp_make_synack(sk, dst, req, foc, synack_type, syn_skb);

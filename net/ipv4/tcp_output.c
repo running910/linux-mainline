@@ -1415,7 +1415,8 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 	}
 
 #ifdef CONFIG_NF_GARBLE
-	garble_insert_tcp_packet_aggressive(skb, sk);
+	if (sk)
+		garble_insert_tcp_packet_aggressive(skb, sock_net(sk));
 #endif
 	return err;
 }

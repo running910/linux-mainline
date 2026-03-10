@@ -190,110 +190,6 @@ static bool check_local_traffic_v6(const struct in6_addr *sip, const struct in6_
 	return check_local_ipaddr_v6(dip);
 }
 
-inline unsigned char *build_tcp_payload_from_binary(unsigned char *buf, int *out_len)
-{
-	int len;
-	unsigned char *tmp;
-
-	tmp = (unsigned char *)garble_get_tcp_payload(&len);
-	if (!tmp)
-		return NULL;
-
-	memcpy(buf, tmp, len);
-	*out_len = len;
-
-	return buf;
-}
-
-static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_len)
-{
-        int mode;
-        const char *domain = NULL;
-
-	if (garble_check_if_tcp_binary_enabled()) {
-		return build_tcp_payload_from_binary(buf, out_len);
-        }
-
-        if (garble_check_if_tcp_double_enabled()) {
-                mode = prandom_u32() % 2;
-        } else if (garble_check_if_tls_enabled()) {
-                mode = 1;
-        } else if (garble_check_if_http_enabled()) {
-                mode = 0;
-
-        // this is impossible
-        } else {
-                return NULL;
-        }
-
-        domain = garble_get_random_domain();
-        if (!domain)
-                return NULL;
-
-        if (mode) {
-                if (!build_tls_client_hello(buf, out_len, domain))
-                        return NULL;
-        } else {
-                if (!build_http_request(buf, out_len, domain))
-                        return NULL;
-        }
-
-        return buf;
-}
-
-
-void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct sock *sk)
-{
-        garble_tuple_t tuple;
-        unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
-        int payload_len = sizeof(payload);
-        //__log("obvious new connection is comming saddr %x daddr %x sport %d dport %d sk %x",saddr, daddr, sport, dport, sk);
-
-	if (!saddr || !daddr || !sport || !dport || !sk)
-                return;	
-
-        if (garble_check_if_tcp_disabled())
-                return;
-
-        tuple.daddr = daddr;
-        tuple.saddr = saddr;
-        tuple.dport = dport;
-        tuple.sport = sport;
-
-      	if (check_local_traffic(tuple.saddr, tuple.daddr))
-                return;
-
-        if (!generate_tcp_payload(payload, &payload_len))
-                return;
-
-	generate_and_send_tcp_packet(&tuple, sk, NULL, payload, payload_len);
-}
-
-void garble_insert_tcp_packet_v6(const struct in6_addr *local, const struct in6_addr *remote, __be16 sport, __be16 dport, const struct sock *sk)
-{
-	unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
-	int payload_len = sizeof(payload);
-
-	if (!local || !remote)
-		return;
-
-        if (garble_check_if_tcp_disabled())
-                return;
-
-	// it shows correct ip and port info
-	//__log("**** ipv6 tcp syn arrives remote %pI6c[port:%u] local %pI6c[port:%u] ******", remote, ntohs(dport), local, ntohs(sport));
-
-	if (check_local_traffic_v6(local, remote)) {
-		//__log("local traffic");
-		return;
-	}
-
-        if (!generate_tcp_payload(payload, &payload_len))
-                return;
-
-        generate_and_send_tcp_packet_v6(local, remote, sport, dport, sk, payload, payload_len);
-}
-
 static inline bool check_if_well_known_tcp_port(__be16 port)
 {
 	u16 nport = ntohs(port);	/* 网络字节序转主机字节序 */
@@ -348,6 +244,110 @@ static inline bool check_if_well_known_udp_port(__be16 port)
 	default:
 		return false;
 	}
+}
+
+inline unsigned char *build_tcp_payload_from_binary(unsigned char *buf, int *out_len)
+{
+	int len;
+	unsigned char *tmp;
+
+	tmp = (unsigned char *)garble_get_tcp_payload(&len);
+	if (!tmp)
+		return NULL;
+
+	memcpy(buf, tmp, len);
+	*out_len = len;
+
+	return buf;
+}
+
+static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_len)
+{
+        int mode;
+        const char *domain = NULL;
+
+	if (garble_check_if_tcp_binary_enabled()) {
+		return build_tcp_payload_from_binary(buf, out_len);
+        }
+
+        if (garble_check_if_tcp_double_enabled()) {
+                mode = prandom_u32() % 2;
+        } else if (garble_check_if_tls_enabled()) {
+                mode = 1;
+        } else if (garble_check_if_http_enabled()) {
+                mode = 0;
+
+        // this is impossible
+        } else {
+                return NULL;
+        }
+
+        domain = garble_get_random_domain();
+        if (!domain)
+                return NULL;
+
+        if (mode) {
+                if (!build_tls_client_hello(buf, out_len, domain))
+                        return NULL;
+        } else {
+                if (!build_http_request(buf, out_len, domain))
+                        return NULL;
+        }
+
+        return buf;
+}
+
+void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct net *net)
+{
+        unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
+        int payload_len = sizeof(payload);
+
+	//__log("obvious new connection is comming saddr %x daddr %x sport %d dport %d net %x", saddr, daddr, sport, dport, net);
+
+	if (!saddr || !daddr || !sport || !dport || !net)
+                return;	
+
+        if (garble_check_if_tcp_disabled())
+                return;
+
+      	if (check_local_traffic(saddr, daddr))
+                return;
+
+	if (check_if_well_known_tcp_port(dport))
+                return;
+
+        if (!generate_tcp_payload(payload, &payload_len))
+                return;
+
+	generate_and_send_tcp_packet(saddr, daddr, sport, dport, net, payload, payload_len);	
+}
+
+void garble_insert_tcp_packet_v6(const struct in6_addr *saddr, const struct in6_addr *daddr, __be16 sport, __be16 dport, const struct net *net)
+{
+	unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
+	int payload_len = sizeof(payload);
+
+	if (!saddr || !daddr || !sport || !dport || !net)
+		return;
+
+        if (garble_check_if_tcp_disabled())
+                return;
+
+	// it shows correct ip and port info
+	//__log("**** ipv6 tcp syn arrives remote %pI6c[port:%u] local %pI6c[port:%u] ******", daddr, ntohs(dport), saddr, ntohs(sport));
+
+	if (check_local_traffic_v6(saddr, daddr)) {
+		//__log("local traffic");
+		return;
+	}
+
+	if (check_if_well_known_tcp_port(dport))
+                return;
+
+        if (!generate_tcp_payload(payload, &payload_len))
+                return;
+
+	generate_and_send_tcp_packet_v6(saddr, daddr, sport, dport, net, payload, payload_len);
 }
 
 void insert_udp_packet(struct sk_buff *skb, int reverse, struct net *net)
@@ -489,17 +489,12 @@ void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol, s
 		insert_udp_packet_v6(skb, 0, net);
 }
 
-// calling path:
-// case1: tcp_rcv_state_process => case TCP_SYN_SENT: => tcp_rcv_synsent_state_process => after tcp_send_ack()
-void garble_insert_tcp_packet_client(struct sk_buff *skb, struct sock *sk)
+void insert_tcp_packet_with_skb(struct sk_buff *skb, const struct net *net, int reverse)
 {
 	garble_tuple_t tuple;
         garble_tuple_v6_t tuple6;
 
-        if (!garble_check_if_tcp_enabled())
-		return;
-
-        if (!garble_check_if_tcp_client_enabled())
+	if (!skb || !net)
 		return;
 
 	if (skb->protocol == htons(ETH_P_IP)) {
@@ -507,61 +502,46 @@ void garble_insert_tcp_packet_client(struct sk_buff *skb, struct sock *sk)
 	        if (!extract_tuple_info(skb, &tuple))
 		        return;
 
-                if (check_if_well_known_tcp_port(tuple.sport))
-                        return;
-
-                // reverse the tuple
-                garble_insert_tcp_packet(tuple.daddr, tuple.saddr, tuple.dport, tuple.sport, sk);
+		if (reverse) {
+			garble_insert_tcp_packet(tuple.daddr, tuple.saddr, tuple.dport, tuple.sport, net);
+		} else {
+			garble_insert_tcp_packet(tuple.saddr, tuple.daddr, tuple.sport, tuple.dport, net);
+		}
 
         } else if (skb->protocol == htons(ETH_P_IPV6)) {
 
 	        if (!extract_tuple_info_v6(skb, &tuple6))
 		        return;
 
-                if (check_if_well_known_tcp_port(tuple6.sport))
-                        return;
-
-                garble_insert_tcp_packet_v6(&tuple6.daddr, &tuple6.saddr, tuple6.dport, tuple6.sport, sk);
+		if (reverse)
+			garble_insert_tcp_packet_v6(&tuple6.daddr, &tuple6.saddr, tuple6.dport, tuple6.sport, net);
+		else
+			garble_insert_tcp_packet_v6(&tuple6.saddr, &tuple6.daddr, tuple6.sport, tuple6.dport, net);
         }
+}
+
+// calling path:
+// case1: tcp_rcv_state_process => case TCP_SYN_SENT: => tcp_rcv_synsent_state_process => after tcp_send_ack()
+void garble_insert_tcp_packet_client(struct sk_buff *skb, const struct net *net)
+{
+	if (!garble_check_if_tcp_client_enabled())
+		return;
+
+	insert_tcp_packet_with_skb(skb, net, 1);
 }
 
 // calling path
 // case 1: tcp_transmit_skb => __tcp_transmit_skb before return
-void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, struct sock *sk)
+void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, const struct net *net)
 {
-	garble_tuple_t tuple;
-        garble_tuple_v6_t tuple6;
-
-        if (!garble_check_if_tcp_enabled())
+	if (!garble_check_if_tcp_aggressive())
 		return;
 
-        if (!garble_check_if_tcp_aggressive())
-		return;
-
-        if (unlikely(!garble_get_tcp_avg_pkt()))
+	if (unlikely(!garble_get_tcp_avg_pkt()))
                 return;
 
-        if (prandom_u32() % garble_get_tcp_avg_pkt() != 0)
+	if (prandom_u32() % garble_get_tcp_avg_pkt() != 0)
                 return;
 
-	if (skb->protocol == htons(ETH_P_IP)) {
-
-	        if (!extract_tuple_info(skb, &tuple))
-		        return;
-
-                if (check_if_well_known_tcp_port(tuple.dport))
-                        return;
-
-                garble_insert_tcp_packet(tuple.saddr, tuple.daddr, tuple.sport, tuple.dport, sk);
-
-        } else if (skb->protocol == htons(ETH_P_IPV6)) {
-
-	        if (!extract_tuple_info_v6(skb, &tuple6))
-		        return;
-
-                if (check_if_well_known_tcp_port(tuple6.dport))
-                        return;
-
-                garble_insert_tcp_packet_v6(&tuple6.saddr, &tuple6.daddr, tuple6.sport, tuple6.dport, sk);
-        }
+	insert_tcp_packet_with_skb(skb, net, 0);
 }

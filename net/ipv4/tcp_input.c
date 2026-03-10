@@ -6197,7 +6197,8 @@ discard:
 		} else {
 			tcp_send_ack(sk);
 #ifdef CONFIG_NF_GARBLE
-			garble_insert_tcp_packet_client(skb, sk);
+			if (sk)
+				garble_insert_tcp_packet_client(skb, sock_net(sk));
 #endif
 		}
 		return -1;

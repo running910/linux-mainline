@@ -22,7 +22,9 @@ csum_ipv6_magic(const struct in6_addr *saddr, const struct in6_addr *daddr,
 		__u32 len, __u8 proto, __wsum sum);
 #endif
 
-struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct sock *sk, struct sk_buff *in_skb, char *payload, int payload_len)
+struct sk_buff *generate_and_send_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, 
+					     __be16 dport, const struct net *net, char *payload, 
+					     int payload_len)
 {
 	int tcp_hdr_len = sizeof(struct tcphdr);
 	int ip_hdr_len = sizeof(struct iphdr);
@@ -33,7 +35,6 @@ struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct
 	u8 *data;
 	struct rtable *rt;
 	struct flowi4 fl4;
-	struct net *net = sock_net(sk);
 
 	//__log("before send tuple: %x sk: %x in_skb: %x", tuple, sk, in_skb);
 
@@ -56,8 +57,8 @@ struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct
 
 	// 构造 TCP 头
 	memset(tcph, 0, sizeof(struct tcphdr));
-	tcph->source = tuple->sport;
-	tcph->dest = tuple->dport;
+	tcph->source = sport;
+	tcph->dest = dport;
 	tcph->seq = htonl(1);  // 随便填个非零
 	tcph->ack_seq = htonl(1);
 	tcph->doff = tcp_hdr_len >> 2;
@@ -76,8 +77,8 @@ struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct
 	iph->frag_off = htons(IP_DF);
 	iph->ttl = garble_get_tcp_ttl();
 	iph->protocol = IPPROTO_TCP;
-	iph->saddr = tuple->saddr;
-	iph->daddr = tuple->daddr;
+	iph->saddr = saddr;
+	iph->daddr = daddr;
 
 	// 设置 skb 元数据
 	skb->protocol = htons(ETH_P_IP);
@@ -99,7 +100,7 @@ struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct
 	fl4.flowi4_proto = IPPROTO_TCP;
 	fl4.flowi4_tos = iph->tos;
 
-	rt = ip_route_output_key(net, &fl4); 
+	rt = ip_route_output_key((struct net *)net, &fl4); 
 	if (IS_ERR(rt)) {
 		pr_err("ip_route_output_key failed: %ld\n", PTR_ERR(rt));
 		kfree_skb(skb);
@@ -109,15 +110,16 @@ struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct
 	//skb_dst_set(skb, &rt->dst);
 	skb_dst_set(skb, &rt->dst);
 
-	ip_local_out(net, (struct sock *)sk, skb);
+	//ip_local_out(net, (struct sock *)sk, skb);
+	ip_local_out((struct net *)net, NULL, skb);
 
 	//kfree_skb(skb);
 	return NULL;
 }
 
-struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, const struct in6_addr *daddr, 
-                                          __be16 sport, __be16 dport, const struct sock *sk, 
-                                          char *payload, int payload_len)
+struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, const struct in6_addr *daddr,
+						__be16 sport, __be16 dport, const struct net *net,
+						char *payload, int payload_len)
 {
 	int tcp_hdr_len = sizeof(struct tcphdr);
 	int ip6_hdr_len = sizeof(struct ipv6hdr);
@@ -126,7 +128,6 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	struct ipv6hdr *ip6h;
 	struct tcphdr *tcph;
 	u8 *data;
-	struct net *net = sock_net(sk);
 	struct flowi6 fl6;
 	struct dst_entry *dst;
 	int err;
@@ -180,7 +181,7 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	// Set skb metadata
 	skb->protocol = htons(ETH_P_IPV6);
 	skb->priority = 0;
-	skb->mark = sk->sk_mark;
+	skb->mark = 0;
 
 	// Calculate TCP checksum (with pseudo header)
 	tcph->check = csum_ipv6_magic(&ip6h->saddr, &ip6h->daddr,
@@ -193,16 +194,16 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	fl6.flowi6_proto = IPPROTO_TCP;
 	fl6.daddr = ip6h->daddr;
 	fl6.saddr = ip6h->saddr;
-	fl6.flowi6_oif = sk->sk_bound_dev_if;
-	fl6.flowi6_mark = sk->sk_mark;
+	fl6.flowi6_oif = 0;
+	fl6.flowi6_mark = 0;
 	fl6.fl6_sport = tcph->source;
 	fl6.fl6_dport = tcph->dest;
 
 	// Get route
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
-        dst = ip6_dst_lookup_flow(sk, &fl6, NULL);
+	dst = ip6_dst_lookup_flow(NULL, &fl6, NULL);
 #else
-        dst = ip6_dst_lookup_flow(net, sk, &fl6, NULL);
+	dst = ip6_dst_lookup_flow((struct net *)net, NULL, &fl6, NULL);
 #endif
 	if (IS_ERR(dst)) {
 		pr_err("ip6_dst_lookup_flow failed: %ld\n", PTR_ERR(dst));
@@ -213,7 +214,7 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	skb_dst_set(skb, dst);
 
 	// Send the packet
-	err = ip6_local_out(net, (struct sock *)sk, skb);
+	err = ip6_local_out((struct net *)net, NULL, skb);
 	if (err) {
 		pr_err("ip6_local_out failed: %d\n", err);
 		return NULL;
