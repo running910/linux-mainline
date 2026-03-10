@@ -76,8 +76,8 @@ struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct
 	iph->frag_off = htons(IP_DF);
 	iph->ttl = garble_get_tcp_ttl();
 	iph->protocol = IPPROTO_TCP;
-	iph->saddr = tuple->daddr;  // 注意：对调，伪装为对方发出的方向
-	iph->daddr = tuple->saddr;
+	iph->saddr = tuple->saddr;
+	iph->daddr = tuple->daddr;
 
 	// 设置 skb 元数据
 	skb->protocol = htons(ETH_P_IP);
@@ -94,8 +94,8 @@ struct sk_buff *generate_and_send_tcp_packet(garble_tuple_t *tuple, const struct
 	ip_send_check(iph);  // 计算 IP checksum
 
 	memset(&fl4, 0, sizeof(fl4));
-	fl4.daddr = iph->saddr;
-	fl4.saddr = iph->daddr;
+	fl4.daddr = iph->daddr;
+	fl4.saddr = iph->saddr;
 	fl4.flowi4_proto = IPPROTO_TCP;
 	fl4.flowi4_tos = iph->tos;
 
