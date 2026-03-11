@@ -21,6 +21,7 @@ inline bool garble_check_if_tcp_disabled(void);
 inline bool garble_check_if_udp_enabled(void);
 inline bool garble_check_if_udp_aggressive(void);
 inline bool garble_check_if_tcp_client_enabled(void);
+inline bool garble_check_if_routing_enabled(void);
 inline int garble_get_udp_avg_pkt(void);
 inline int garble_get_tcp_avg_pkt(void);
 inline const char *garble_get_udp_payload(int *len);
@@ -31,6 +32,7 @@ inline int garble_get_udp_ttl(void);
 inline int garble_get_tcp_ttl(void);
 inline int garble_get_udp_obf_proto(void);
 inline const char *garble_get_udp_extra(void);
+inline int garble_check_if_lan_nic(const char *nic);
 
 #else
 extern const char *garble_get_random_domain(void);
@@ -43,6 +45,7 @@ extern bool garble_check_if_tcp_disabled(void);
 extern bool garble_check_if_udp_enabled(void);
 extern bool garble_check_if_udp_aggressive(void);
 extern bool garble_check_if_tcp_client_enabled(void);
+extern bool garble_check_if_routing_enabled(void);
 extern int garble_get_udp_avg_pkt(void);
 extern int garble_get_tcp_avg_pkt(void);
 extern const char *garble_get_udp_payload(int *len);
@@ -53,6 +56,7 @@ extern int garble_get_udp_ttl(void);
 extern int garble_get_tcp_ttl(void);
 extern int garble_get_udp_obf_proto(void);
 extern const char *garble_get_udp_extra(void);
+extern int garble_check_if_lan_nic(const char *nic);
 
 #endif
 

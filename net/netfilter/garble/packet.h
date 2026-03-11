@@ -17,6 +17,10 @@ typedef struct garble_tuple_v6_type {
 	u8 protocol;
 } garble_tuple_v6_t;
 
+garble_tuple_t *extract_tuple_info(struct sk_buff *skb, garble_tuple_t *tuple);
+
+garble_tuple_v6_t *extract_tuple_info_v6(struct sk_buff *skb, garble_tuple_v6_t *tuple);
+
 struct sk_buff *generate_and_send_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, 
 					     __be16 dport, const struct net *net, char *payload, 
 					     int payload_len);

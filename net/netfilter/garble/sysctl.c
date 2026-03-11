@@ -8,6 +8,7 @@
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
+#include <linux/string.h>
 
 #include "sysctl.h"
 
@@ -15,6 +16,8 @@
 #define DOMAINS_BUF_LEN 512
 #define MAX_DOMAINS     20
 #define UDP_EXTRA_BUF_LEN 512
+#define LAN_NICS_BUF_LEN 512
+#define MAX_LAN_NICS    20
 
 struct garble_config {
 	char domain_buf[DOMAINS_BUF_LEN];       // 域名参数buffer，会被strtep切开
@@ -23,8 +26,16 @@ struct garble_config {
 	struct rcu_head rcu;                    // RCU删除钩子
 };
 
+struct garble_lan_config {
+	char lan_buf[LAN_NICS_BUF_LEN];          // 网卡参数buffer，会被strsep切开
+	char *lan_list[MAX_LAN_NICS];            // 网卡列表
+	int num_lans;                           // 网卡数量
+	struct rcu_head rcu;                    // RCU删除钩子
+};
+
 static int garble_enabled = 0;
 static char garble_args[DOMAINS_BUF_LEN] = "";
+static char garble_lan_args[LAN_NICS_BUF_LEN] = "br-virt,br-vmbr0";
 static int garble_http_enabled = 0;
 static int garble_udp_enabled = 0;
 static int garble_tcp_aggressive = 0;
@@ -32,6 +43,7 @@ static int garble_tcp_avg_pkt = 0;
 static int garble_udp_aggressive = 0;
 static int garble_udp_avg_pkt = 0;
 static int garble_tcp_client_enabled = 0;
+static int garble_routing_enabled = 0;
 static int garble_tcp_binary_payload = 0;
 static int garble_udp_binary_payload = 0;
 static int garble_udp_ttl = 3;                          // Default TTL value for UDP packets
@@ -40,8 +52,10 @@ static int garble_tcp_ttl = 3;                          // Default TTL value for
 static char garble_udp_extra[UDP_EXTRA_BUF_LEN] ={0};   // UDP extra configuration string
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
+static struct garble_lan_config __rcu *garble_lan_cfg_ptr = NULL;
 
 static DEFINE_SPINLOCK(garble_cfg_lock);
+static DEFINE_SPINLOCK(garble_lan_cfg_lock);
 
 static struct {
 	char data[GARBLE_MAX_UDP_PAYLOAD];
@@ -64,6 +78,12 @@ static void garble_config_free(struct rcu_head *head)
 {
         struct garble_config *cfg = container_of(head, struct garble_config, rcu);
         kfree(cfg);
+}
+
+static void garble_lan_config_free(struct rcu_head *head)
+{
+	struct garble_lan_config *cfg = container_of(head, struct garble_lan_config, rcu);
+	kfree(cfg);
 }
 
 static int proc_handler_ttl(struct ctl_table *table, int write,
@@ -185,6 +205,67 @@ static int proc_handler_domains(struct ctl_table *table, int write,
 	if (NULL != old_cfg)
 		call_rcu(&old_cfg->rcu, garble_config_free);
 
+
+	return 0;
+}
+
+static struct garble_lan_config *garble_parse_lan_nics(const char *src)
+{
+	struct garble_lan_config *cfg;
+	char *s;
+	char *token;
+	int i = 0;
+
+	if (!src)
+		return NULL;
+
+	cfg = kzalloc(sizeof(*cfg), GFP_KERNEL);
+	if (!cfg)
+		return NULL;
+
+	if (strscpy(cfg->lan_buf, src, LAN_NICS_BUF_LEN) < 0) {
+		kfree(cfg);
+		return NULL;
+	}
+
+	s = cfg->lan_buf;
+	while (((token = strsep(&s, ",")) != NULL) && (i < MAX_LAN_NICS)) {
+		if (*token == '\0')
+			continue;
+		printk(KERN_INFO "garble: lan nic[%d] = %s\n", i, token);
+		cfg->lan_list[i++] = token;
+	}
+	cfg->num_lans = i;
+
+	pr_info("garble: updated %d lan_nics\n", cfg->num_lans);
+
+	return cfg;
+}
+
+static int proc_handler_lan_nics(struct ctl_table *table, int write,
+				 void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct garble_lan_config *new_cfg;
+	struct garble_lan_config *old_cfg;
+	int ret;
+	unsigned long flags;
+
+	ret = proc_dostring(table, write, buffer, lenp, ppos);
+	if (ret != 0 || !write)
+		return ret;
+
+	new_cfg = garble_parse_lan_nics((char *)table->data);
+	if (!new_cfg)
+		return -ENOMEM;
+
+	spin_lock_irqsave(&garble_lan_cfg_lock, flags);
+	old_cfg = rcu_dereference_protected(garble_lan_cfg_ptr,
+					    lockdep_is_held(&garble_lan_cfg_lock));
+	rcu_assign_pointer(garble_lan_cfg_ptr, new_cfg);
+	spin_unlock_irqrestore(&garble_lan_cfg_lock, flags);
+
+	if (old_cfg)
+		call_rcu(&old_cfg->rcu, garble_lan_config_free);
 
 	return 0;
 }
@@ -343,6 +424,13 @@ static struct ctl_table garble_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 	{
+		.procname	= "enable_routing",
+		.data		= &garble_routing_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
 		.procname	= "enable_tcp_binary_payload",
 		.data		= &garble_tcp_binary_payload,
 		.maxlen		= sizeof(int),
@@ -398,6 +486,13 @@ static struct ctl_table garble_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dostring,
 	},
+	{
+		.procname	= "lan_nics",
+		.data		= garble_lan_args,
+		.maxlen		= DOMAINS_BUF_LEN,
+		.mode		= 0644,
+		.proc_handler	= proc_handler_lan_nics,
+	},
         {
                 .procname   = "domains",
                 .data       = garble_args,
@@ -434,6 +529,9 @@ static struct proc_dir_entry *tcp_payload_proc_entry;
 
 int garble_sysctl_init(void)
 {
+	struct garble_lan_config *default_lan_cfg;
+	unsigned long flags;
+
         garble_sysctl_header = register_sysctl_table(garble_net_root);
 
         if (garble_sysctl_header) {
@@ -464,12 +562,21 @@ int garble_sysctl_init(void)
 		return -ENOMEM;
 	}
 
+	default_lan_cfg = garble_parse_lan_nics(garble_lan_args);
+	if (!default_lan_cfg)
+		return -ENOMEM;
+
+	spin_lock_irqsave(&garble_lan_cfg_lock, flags);
+	rcu_assign_pointer(garble_lan_cfg_ptr, default_lan_cfg);
+	spin_unlock_irqrestore(&garble_lan_cfg_lock, flags);
+
         return 0;
 }
 
 void garble_sysctl_exit(void)
 {
 	struct garble_config *cfg;
+	struct garble_lan_config *lan_cfg;
 	unsigned long flags;
 
 	unregister_sysctl_table(garble_sysctl_header);
@@ -489,6 +596,15 @@ void garble_sysctl_exit(void)
 
 	if (NULL != cfg)
 		call_rcu(&cfg->rcu, garble_config_free);
+
+	spin_lock_irqsave(&garble_lan_cfg_lock, flags);
+	lan_cfg = rcu_dereference_protected(garble_lan_cfg_ptr,
+					    lockdep_is_held(&garble_lan_cfg_lock));
+	rcu_assign_pointer(garble_lan_cfg_ptr, NULL);
+	spin_unlock_irqrestore(&garble_lan_cfg_lock, flags);
+
+	if (lan_cfg)
+		call_rcu(&lan_cfg->rcu, garble_lan_config_free);
 }
 
 inline bool garble_check_if_tcp_enabled(void)
@@ -556,6 +672,11 @@ inline bool garble_check_if_tcp_client_enabled(void)
 	return garble_tcp_client_enabled;
 }
 
+inline bool garble_check_if_routing_enabled(void)
+{
+	return garble_routing_enabled;
+}
+
 inline int garble_get_tcp_ttl(void)
 {
 	return garble_tcp_ttl;
@@ -583,6 +704,30 @@ inline const char *garble_get_random_domain(void)
 	rcu_read_unlock();
 
 	return domain;
+}
+
+inline int garble_check_if_lan_nic(const char *nic)
+{
+	struct garble_lan_config *cfg;
+	int i;
+	int found = 0;
+
+	if (!nic)
+		return 0;
+
+	rcu_read_lock();
+	cfg = rcu_dereference(garble_lan_cfg_ptr);
+	if (cfg && (cfg->num_lans > 0)) {
+		for (i = 0; i < cfg->num_lans; i++) {
+			if (cfg->lan_list[i] && !strcmp(cfg->lan_list[i], nic)) {
+				found = 1;
+				break;
+			}
+		}
+	}
+	rcu_read_unlock();
+
+	return found;
 }
 
 inline const char *garble_get_udp_payload(int *len)

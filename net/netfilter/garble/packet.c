@@ -22,6 +22,84 @@ csum_ipv6_magic(const struct in6_addr *saddr, const struct in6_addr *daddr,
 		__u32 len, __u8 proto, __wsum sum);
 #endif
 
+garble_tuple_t *extract_tuple_info(struct sk_buff *skb, garble_tuple_t *tuple)
+{
+	struct iphdr *iph;
+        struct tcphdr *tcph;
+	struct udphdr *udph;
+
+        // skb->network_header 应该已经指向 IP 头（由协议栈设置）
+        iph = ip_hdr(skb);
+        if (!iph)
+        	return NULL;
+
+        // 协议号
+        tuple->protocol = iph->protocol;
+
+        // IP 地址
+        tuple->saddr = iph->saddr;
+        tuple->daddr = iph->daddr;
+
+        if (tuple->protocol == IPPROTO_TCP) {
+		tcph = tcp_hdr(skb);
+		if (!tcph)
+			return NULL;
+
+		tuple->sport = tcph->source;
+		tuple->dport = tcph->dest;
+
+        } else if (tuple->protocol == IPPROTO_UDP) {
+		udph = udp_hdr(skb);
+		if (!udph)
+			return NULL;
+
+		tuple->sport = udph->source;
+		tuple->dport = udph->dest;
+        } else {
+		return NULL;
+	}
+
+	return tuple;
+}
+
+garble_tuple_v6_t *extract_tuple_info_v6(struct sk_buff *skb, garble_tuple_v6_t *tuple)
+{
+	struct ipv6hdr *ip6h;
+	struct tcphdr *tcph;
+	struct udphdr *udph;
+
+	ip6h = ipv6_hdr(skb);
+	if (!ip6h)
+		return NULL;
+
+	tuple->protocol = ip6h->nexthdr;
+	tuple->saddr = ip6h->saddr;
+	tuple->daddr = ip6h->daddr;
+
+	switch (tuple->protocol) {
+	case IPPROTO_TCP:
+		tcph = tcp_hdr(skb);
+		if (!tcph)
+			return NULL;
+		tuple->sport = tcph->source;
+		tuple->dport = tcph->dest;
+		break;
+		
+	case IPPROTO_UDP:
+		udph = udp_hdr(skb);
+		if (!udph)
+			return NULL;
+		tuple->sport = udph->source;
+		tuple->dport = udph->dest;
+		break;
+		
+	default:
+		return NULL;
+	}
+
+	return tuple;
+}
+
 struct sk_buff *generate_and_send_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, 
 					     __be16 dport, const struct net *net, char *payload, 
 					     int payload_len)
@@ -38,8 +116,7 @@ struct sk_buff *generate_and_send_tcp_packet(__be32 saddr, __be32 daddr, __be16 
 
 	//__log("before send tuple: %x sk: %x in_skb: %x", tuple, sk, in_skb);
 
-	//printk(KERN_INFO "********* 5-tuple: tcp %pI4:%u -> %pI4:%u\n",
-	//	&tuple->saddr, ntohs(tuple->sport), &tuple->daddr, ntohs(tuple->dport));
+	//printk(KERN_INFO "********* 5-tuple: tcp %pI4:%u -> %pI4:%u\n", &saddr, ntohs(sport), &daddr, ntohs(dport));
 
 	// 分配 skb
 	skb = alloc_skb(total_len + LL_MAX_HEADER, GFP_ATOMIC);

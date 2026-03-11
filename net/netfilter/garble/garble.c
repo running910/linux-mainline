@@ -1,13 +1,16 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/errno.h>
 
 #include "sysctl.h"
 #include "stun.h"
+#include "routing.h"
 
 static __exit void nf_garble_exit(void)
 {
 	printk("************* nf_garble_exit");	
 
+        garble_routing_exit();
 	garble_sysctl_exit();
         stun_crypto_cleanup();
 
@@ -16,6 +19,9 @@ static __exit void nf_garble_exit(void)
 static __exit int nf_garble_init(void)
 {
         printk("************* nf_garble_init");
+
+	if (garble_routing_init())
+		return -EINVAL;
 
         garble_sysctl_init();
         stun_crypto_init();

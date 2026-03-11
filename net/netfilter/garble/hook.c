@@ -60,45 +60,6 @@ extern unsigned char *build_udp_payload(unsigned char *buf, int *out_len);
 
 #endif
 
-garble_tuple_t *extract_tuple_info(struct sk_buff *skb, garble_tuple_t *tuple)
-{
-	struct iphdr *iph;
-        struct tcphdr *tcph;
-	struct udphdr *udph;
-
-        // skb->network_header 应该已经指向 IP 头（由协议栈设置）
-        iph = ip_hdr(skb);
-        if (!iph)
-        	return NULL;
-
-        // 协议号
-        tuple->protocol = iph->protocol;
-
-        // IP 地址
-        tuple->saddr = iph->saddr;
-        tuple->daddr = iph->daddr;
-
-        if (tuple->protocol == IPPROTO_TCP) {
-		tcph = tcp_hdr(skb);
-		if (!tcph)
-			return NULL;
-
-		tuple->sport = tcph->source;
-		tuple->dport = tcph->dest;
-
-        } else if (tuple->protocol == IPPROTO_UDP) {
-		udph = udp_hdr(skb);
-		if (!udph)
-			return NULL;
-
-		tuple->sport = udph->source;
-		tuple->dport = udph->dest;
-        } else {
-		return NULL;
-	}
-
-	return tuple;
-}
 
 int check_local_ipaddr(u32 ipaddr)
 {
@@ -384,43 +345,7 @@ void insert_udp_packet(struct sk_buff *skb, int reverse, struct net *net)
 	generate_and_send_udp_packet(&tuple, skb, net, payload, payload_len);
 }
 
-garble_tuple_v6_t *extract_tuple_info_v6(struct sk_buff *skb, garble_tuple_v6_t *tuple)
-{
-	struct ipv6hdr *ip6h;
-	struct tcphdr *tcph;
-	struct udphdr *udph;
 
-	ip6h = ipv6_hdr(skb);
-	if (!ip6h)
-		return NULL;
-
-	tuple->protocol = ip6h->nexthdr;
-	tuple->saddr = ip6h->saddr;
-	tuple->daddr = ip6h->daddr;
-
-	switch (tuple->protocol) {
-	case IPPROTO_TCP:
-		tcph = tcp_hdr(skb);
-		if (!tcph)
-			return NULL;
-		tuple->sport = tcph->source;
-		tuple->dport = tcph->dest;
-		break;
-		
-	case IPPROTO_UDP:
-		udph = udp_hdr(skb);
-		if (!udph)
-			return NULL;
-		tuple->sport = udph->source;
-		tuple->dport = udph->dest;
-		break;
-		
-	default:
-		return NULL;
-	}
-
-	return tuple;
-}
 
 void insert_udp_packet_v6(struct sk_buff *skb, int reverse, struct net *net)
 {
@@ -534,6 +459,9 @@ void garble_insert_tcp_packet_client(struct sk_buff *skb, const struct net *net)
 // case 1: tcp_transmit_skb => __tcp_transmit_skb before return
 void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, const struct net *net)
 {
+
+	//log_skb(skb, "garble: aggressive tcp packet insert, skb %p", skb);
+
 	if (!garble_check_if_tcp_aggressive())
 		return;
 
@@ -542,6 +470,8 @@ void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, const struct net *
 
 	if (prandom_u32() % garble_get_tcp_avg_pkt() != 0)
                 return;
+
+	//log_skb(skb, "garble: aggressive tcp packet insert!!!!!!!!!!!!!");
 
 	insert_tcp_packet_with_skb(skb, net, 0);
 }
