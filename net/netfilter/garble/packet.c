@@ -300,7 +300,9 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	return NULL;
 }
 
-struct sk_buff *generate_and_send_udp_packet(garble_tuple_t *tuple, struct sk_buff *skb, struct net *net, char *payload, int payload_len)
+struct sk_buff *generate_and_send_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, 
+					     __be16 dport, const struct net *net, 
+					     char *payload, int payload_len)
 {
 	struct sk_buff *new_skb;
 	struct iphdr *new_iph;
@@ -339,8 +341,8 @@ struct sk_buff *generate_and_send_udp_packet(garble_tuple_t *tuple, struct sk_bu
 
 	/* Build UDP header - use same src/dst as original packet */
 	memset(new_udph, 0, sizeof(struct udphdr));
-	new_udph->source = tuple->sport; 
-	new_udph->dest = tuple->dport;
+	new_udph->source = sport; 
+	new_udph->dest = dport;
 	new_udph->len = htons(udp_hdr_len + payload_len);
 	new_udph->check = 0;			/* Will be calculated later */
 
@@ -354,13 +356,13 @@ struct sk_buff *generate_and_send_udp_packet(garble_tuple_t *tuple, struct sk_bu
 	new_iph->frag_off = htons(IP_DF);
 	new_iph->ttl = garble_get_udp_ttl();
 	new_iph->protocol = IPPROTO_UDP;
-	new_iph->saddr = tuple->saddr;
-	new_iph->daddr = tuple->daddr;
+	new_iph->saddr = saddr;
+	new_iph->daddr = daddr;
 
 	/* Set skb metadata */
 	new_skb->protocol = htons(ETH_P_IP);
-	new_skb->mark = skb->mark;
-	new_skb->priority = skb->priority;
+	new_skb->mark = 0;
+	new_skb->priority = 0;
 
 	/* Calculate UDP checksum (with pseudo-header) */
 	new_udph->check = csum_tcpudp_magic(new_iph->saddr, new_iph->daddr,
@@ -399,7 +401,9 @@ struct sk_buff *generate_and_send_udp_packet(garble_tuple_t *tuple, struct sk_bu
 	return new_skb;
 }
 
-struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct sk_buff *skb, struct net *net, char *payload, int payload_len)
+struct sk_buff *generate_and_send_udp_packet_v6(const struct in6_addr *saddr, const struct in6_addr *daddr,
+					        __be16 sport, __be16 dport, const struct net *net, 
+						char *payload, int payload_len)
 {
 	int udp_hdr_len = sizeof(struct udphdr);
 	int ip6_hdr_len = sizeof(struct ipv6hdr);
@@ -440,8 +444,8 @@ struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct
 
 	/* Build UDP header */
 	memset(udph, 0, sizeof(struct udphdr));
-	udph->source = tuple->sport;
-	udph->dest = tuple->dport;
+	udph->source = sport;
+	udph->dest = dport;
 	udph->len = htons(udp_hdr_len + payload_len);
 	udph->check = 0;  /* Will be calculated later */
 
@@ -451,13 +455,13 @@ struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct
 	ip6h->payload_len = htons(udp_hdr_len + payload_len);
 	ip6h->nexthdr = IPPROTO_UDP;
 	ip6h->hop_limit = garble_get_udp_ttl();
-	ip6h->saddr = tuple->saddr;
-	ip6h->daddr = tuple->daddr;
+	ip6h->saddr = *saddr;
+	ip6h->daddr = *daddr;
 
 	/* Set skb metadata */
 	new_skb->protocol = htons(ETH_P_IPV6);
-	new_skb->priority = skb->priority;
-	new_skb->mark = skb->mark;
+	new_skb->priority = 0;
+	new_skb->mark = 0;
 
 	/* Calculate UDP checksum */
 	udph->check = csum_ipv6_magic(&ip6h->saddr, &ip6h->daddr,
@@ -470,9 +474,9 @@ struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct
 	fl6.flowi6_proto = IPPROTO_UDP;
 	fl6.daddr = ip6h->daddr;
 	fl6.saddr = ip6h->saddr;
-	if (skb->sk)
-		fl6.flowi6_oif = skb->sk->sk_bound_dev_if;
-	fl6.flowi6_mark = skb->mark;
+	//if (skb->sk)
+	//	fl6.flowi6_oif = skb->sk->sk_bound_dev_if;
+	fl6.flowi6_mark = 0;
 	fl6.fl6_sport = udph->source;
 	fl6.fl6_dport = udph->dest;
 
@@ -480,7 +484,7 @@ struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
         dst = ip6_dst_lookup_flow(skb->sk, &fl6, NULL);
 #else
-        dst = ip6_dst_lookup_flow(net, skb->sk, &fl6, NULL);
+        dst = ip6_dst_lookup_flow(net, NULL, &fl6, NULL);
 #endif
 
 	if (IS_ERR(dst)) {
@@ -494,7 +498,7 @@ struct sk_buff *generate_and_send_udp_packet_v6(garble_tuple_v6_t *tuple, struct
 	new_skb->cb[47] = 147;
 
 	/* Send packet */
-	err = ip6_local_out(net, skb->sk, new_skb);
+	err = ip6_local_out(net, NULL, new_skb);
 	if (err) {
 		pr_err("ip6_local_out failed: %d\n", err);
 		return NULL;

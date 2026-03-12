@@ -630,8 +630,8 @@ nf_nat_ipv4_fn(void *priv, struct sk_buff *skb,
 
 	ct = nf_ct_get(skb, &ctinfo);
 
-	if (!ct)
-		log_skb_pref(skb, "direct come back");
+//	if (!ct)
+//		log_skb_pref(skb, "direct come back");
 
 	if (!ct)
 		return NF_ACCEPT;
@@ -646,7 +646,7 @@ nf_nat_ipv4_fn(void *priv, struct sk_buff *skb,
 		}
 	}
 
-	log_skb(skb, "mark");
+//	log_skb(skb, "mark");
 
 	return nf_nat_inet_fn(priv, skb, state);
 }

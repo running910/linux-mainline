@@ -60,6 +60,8 @@ extern unsigned char *build_udp_payload(unsigned char *buf, int *out_len);
 
 #endif
 
+void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reverse);
+
 
 int check_local_ipaddr(u32 ipaddr)
 {
@@ -90,6 +92,8 @@ int check_local_ipaddr(u32 ipaddr)
 
 static bool check_local_traffic(u32 sip, u32 dip)
 {
+	return false;
+
 	if (sip == dip) {
 		return true;
 	}
@@ -110,6 +114,8 @@ static int check_local_ipaddr_v6(const struct in6_addr *ipaddr)
 	u32 addr1 = ntohl(addr[1]);
 	u32 addr2 = ntohl(addr[2]);
 	u32 addr3 = ntohl(addr[3]);
+
+	return false;
 
 	/* Check loopback address (::1/128) */
 	if (addr0 == IPV6_LOOPBACK_0 && addr1 == IPV6_LOOPBACK_1 && 
@@ -311,88 +317,57 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *saddr, const struct in6_
 	generate_and_send_tcp_packet_v6(saddr, daddr, sport, dport, net, payload, payload_len);
 }
 
-void insert_udp_packet(struct sk_buff *skb, int reverse, struct net *net)
+void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct net *net)
 {
-	garble_tuple_t tuple;
-	garble_tuple_t tmp;
 	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
 	int payload_len;
 
-	if (!extract_tuple_info(skb, &tuple))
+	if (!saddr || !daddr || !sport || !dport || !net)
 		return;
 
-        if (tuple.protocol != IPPROTO_UDP)
-                return;
-
-	if (reverse) {
-		memcpy(&tmp, &tuple, sizeof(tmp));
-		tuple.daddr = tmp.saddr;
-		tuple.dport = tmp.sport;
-		tuple.saddr = tmp.daddr;
-		tuple.sport = tmp.dport;
-	}
-
-	if (check_local_traffic(tuple.saddr, tuple.daddr))
-		return;
-
-	if (check_if_well_known_udp_port(tuple.dport))
-		return;
-
-	payload_len = sizeof(payload);
-	if (!build_udp_payload(payload, &payload_len))
-		return;
-
-	generate_and_send_udp_packet(&tuple, skb, net, payload, payload_len);
-}
-
-
-
-void insert_udp_packet_v6(struct sk_buff *skb, int reverse, struct net *net)
-{
-	garble_tuple_v6_t tuple;
-	garble_tuple_v6_t tmp;
-	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
-	int payload_len;
-
-        if (!extract_tuple_info_v6(skb, &tuple))
-		return;
-
-        if (tuple.protocol != IPPROTO_UDP)
-                return;
-
-	if (reverse) {
-		memcpy(&tmp, &tuple, sizeof(tuple));
-		tuple.daddr = tmp.saddr;
-		tuple.dport = tmp.sport;
-		tuple.saddr = tmp.daddr;
-		tuple.sport = tmp.dport;
-	}
-
-        if (check_local_traffic_v6(&tuple.saddr, &tuple.daddr)) {
-		return;
-	}
-
-        if (check_if_well_known_udp_port(tuple.dport))
-		return;
-
-	payload_len = sizeof(payload);
-	if (!build_udp_payload(payload, &payload_len))
-		return;
-
-	generate_and_send_udp_packet_v6(&tuple, skb, net, payload, payload_len);
-}
-
-void garble_insert_udp_packet(struct sk_buff *skb, int reverse, struct net *net)
-{
 	if (!garble_check_if_udp_enabled())
 		return;
 
-	if (skb->protocol == htons(ETH_P_IP))
-		insert_udp_packet(skb, reverse, net);
-        else if (skb->protocol == htons(ETH_P_IPV6))
-		insert_udp_packet_v6(skb, reverse, net);
+	if (check_local_traffic(saddr, daddr))
+		return;
+
+	if (check_if_well_known_udp_port(dport))
+		return;
+
+	payload_len = sizeof(payload);
+	if (!build_udp_payload(payload, &payload_len))
+		return;
+
+	generate_and_send_udp_packet(saddr, daddr, sport, dport, net, payload, payload_len);
+
 }
 EXPORT_SYMBOL(garble_insert_udp_packet);
+
+
+void garble_insert_udp_packet_v6(const struct in6_addr *saddr, const struct in6_addr *daddr, __be16 sport, __be16 dport, const struct net *net)
+{
+	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
+	int payload_len = sizeof(payload);
+
+	if (!saddr || !daddr || !sport || !dport || !net)
+		return;
+
+        if (!garble_check_if_udp_enabled())
+		return;
+
+	if (check_local_traffic_v6(saddr, daddr)) {
+		return;
+	}
+
+	if (check_if_well_known_udp_port(dport))
+                return;
+
+ 	payload_len = sizeof(payload);
+	if (!build_udp_payload(payload, &payload_len))
+		return;
+
+	generate_and_send_udp_packet_v6(saddr, daddr, sport, dport, net, payload, payload_len);
+}
 
 void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol, struct net *net)
 {
@@ -409,12 +384,12 @@ void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol, s
                 return;
 
 	if (protocol == ETH_P_IP)
-		insert_udp_packet(skb, 0, net);
+		insert_packet_with_skb(skb, net, 0);
         else if (protocol == ETH_P_IPV6)
-		insert_udp_packet_v6(skb, 0, net);
+		insert_packet_with_skb(skb, net, 0);
 }
 
-void insert_tcp_packet_with_skb(struct sk_buff *skb, const struct net *net, int reverse)
+void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reverse)
 {
 	garble_tuple_t tuple;
         garble_tuple_v6_t tuple6;
@@ -427,10 +402,20 @@ void insert_tcp_packet_with_skb(struct sk_buff *skb, const struct net *net, int 
 	        if (!extract_tuple_info(skb, &tuple))
 		        return;
 
-		if (reverse) {
-			garble_insert_tcp_packet(tuple.daddr, tuple.saddr, tuple.dport, tuple.sport, net);
-		} else {
-			garble_insert_tcp_packet(tuple.saddr, tuple.daddr, tuple.sport, tuple.dport, net);
+		if (tuple.protocol == IPPROTO_TCP) {
+
+			if (reverse) {
+				garble_insert_tcp_packet(tuple.daddr, tuple.saddr, tuple.dport, tuple.sport, net);
+			} else {
+				garble_insert_tcp_packet(tuple.saddr, tuple.daddr, tuple.sport, tuple.dport, net);
+			}
+		} else if (tuple.protocol == IPPROTO_UDP) {
+
+			if (reverse) {
+				garble_insert_udp_packet(tuple.daddr, tuple.saddr, tuple.dport, tuple.sport, net);
+			} else {
+				garble_insert_udp_packet(tuple.saddr, tuple.daddr, tuple.sport, tuple.dport, net);
+			}
 		}
 
         } else if (skb->protocol == htons(ETH_P_IPV6)) {
@@ -438,10 +423,20 @@ void insert_tcp_packet_with_skb(struct sk_buff *skb, const struct net *net, int 
 	        if (!extract_tuple_info_v6(skb, &tuple6))
 		        return;
 
-		if (reverse)
-			garble_insert_tcp_packet_v6(&tuple6.daddr, &tuple6.saddr, tuple6.dport, tuple6.sport, net);
-		else
-			garble_insert_tcp_packet_v6(&tuple6.saddr, &tuple6.daddr, tuple6.sport, tuple6.dport, net);
+		if (tuple6.protocol == IPPROTO_TCP) {
+
+			if (reverse)
+				garble_insert_tcp_packet_v6(&tuple6.daddr, &tuple6.saddr, tuple6.dport, tuple6.sport, net);
+			else
+				garble_insert_tcp_packet_v6(&tuple6.saddr, &tuple6.daddr, tuple6.sport, tuple6.dport, net);
+		} else if (tuple6.protocol == IPPROTO_UDP) {
+
+			if (reverse)				
+				garble_insert_udp_packet_v6(&tuple6.daddr, &tuple6.saddr, tuple6.dport, tuple6.sport, net);
+			else			
+				garble_insert_udp_packet_v6(&tuple6.saddr, &tuple6.daddr, tuple6.sport, tuple6.dport, net);
+		
+		}
         }
 }
 
@@ -452,7 +447,7 @@ void garble_insert_tcp_packet_client(struct sk_buff *skb, const struct net *net)
 	if (!garble_check_if_tcp_client_enabled())
 		return;
 
-	insert_tcp_packet_with_skb(skb, net, 1);
+	insert_packet_with_skb(skb, net, 1);
 }
 
 // calling path
@@ -473,5 +468,5 @@ void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, const struct net *
 
 	//log_skb(skb, "garble: aggressive tcp packet insert!!!!!!!!!!!!!");
 
-	insert_tcp_packet_with_skb(skb, net, 0);
+	insert_packet_with_skb(skb, net, 0);
 }

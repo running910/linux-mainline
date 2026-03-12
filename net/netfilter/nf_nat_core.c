@@ -742,7 +742,7 @@ nf_nat_inet_fn(void *priv, struct sk_buff *skb,
 	if (!ct)
 		return NF_ACCEPT;
 
-	log_skb(skb, "current ctinfo %d", ctinfo);
+	//log_skb(skb, "current ctinfo %d", ctinfo);
 
 	nat = nfct_nat(ct);
 
@@ -754,7 +754,7 @@ nf_nat_inet_fn(void *priv, struct sk_buff *skb,
 		/* Seen it before?  This can happen for loopback, retrans,
 		 * or local packets.
 		 */
-		 log_skb(skb, "mark");
+		 //log_skb(skb, "mark");
 		if (!nf_nat_initialized(ct, maniptype)) {
 			struct nf_nat_lookup_hook_priv *lpriv = priv;
 			struct nf_hook_entries *e = rcu_dereference(lpriv->entries);
@@ -764,7 +764,7 @@ nf_nat_inet_fn(void *priv, struct sk_buff *skb,
 			if (!e)
 				goto null_bind;
 
-			 log_skb(skb, "mark num_hook_entries: %d", e->num_hook_entries);
+			 //log_skb(skb, "mark num_hook_entries: %d", e->num_hook_entries);
 
 			for (i = 0; i < e->num_hook_entries; i++) {
 				ret = e->hooks[i].hook(e->hooks[i].priv, skb,
@@ -774,7 +774,7 @@ nf_nat_inet_fn(void *priv, struct sk_buff *skb,
 				if (nf_nat_initialized(ct, maniptype))
 					goto do_nat;
 			}
-			 log_skb(skb, "mark");
+			 //log_skb(skb, "mark");
 null_bind:
 			ret = nf_nat_alloc_null_binding(ct, state->hook);
 			if (ret != NF_ACCEPT)
@@ -796,7 +796,7 @@ null_bind:
 			goto oif_changed;
 	}
 do_nat:
-	log_skb(skb, "mark");
+	//log_skb(skb, "mark");
 	return nf_nat_packet(ct, ctinfo, state->hook, skb);
 
 oif_changed:
