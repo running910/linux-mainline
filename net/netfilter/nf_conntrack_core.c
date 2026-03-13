@@ -1679,7 +1679,7 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	struct nf_conn *ct;
 	u32 hash;
 #ifdef CONFIG_NF_GARBLE
-	int reverse = 0;
+	//int reverse = 0;
 
 	const char *dev = "unknown";
 	if (skb->dev)
@@ -1700,8 +1700,8 @@ resolve_normal_ct(struct nf_conn *tmpl,
 #ifdef CONFIG_NF_GARBLE
 
 		//if (state->net == &init_net) {
-			garble_mark_conn_first_packet(skb);
-			__log("########### new ct hook point: %s", garble_get_nf_hook_point(state->hook));
+		garble_mark_conn_first_packet(skb);
+		__log("########### new ct hook point: %s", garble_get_nf_hook_point(state->hook));
 		//}
 
 		// if (state->hook == NF_INET_PRE_ROUTING)

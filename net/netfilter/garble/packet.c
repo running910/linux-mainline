@@ -381,7 +381,7 @@ struct sk_buff *generate_and_send_udp_packet(__be32 saddr, __be32 daddr, __be16 
 	fl4.flowi4_tos = new_iph->tos;
 
 	/* Find route */
-	rt = ip_route_output_key(net, &fl4);
+	rt = ip_route_output_key((struct net *)net, &fl4);
 	if (IS_ERR(rt)) {
 		kfree_skb(new_skb);
 		return NULL;
@@ -392,7 +392,7 @@ struct sk_buff *generate_and_send_udp_packet(__be32 saddr, __be32 daddr, __be16 
 	new_skb->cb[47] = 147;
 
 	/* Send packet */
-	ret = ip_local_out(net, NULL, new_skb);
+	ret = ip_local_out((struct net *)net, NULL, new_skb);
 	if (ret < 0) {
 	//	kfree_skb(new_skb);
 		return NULL;
@@ -484,7 +484,7 @@ struct sk_buff *generate_and_send_udp_packet_v6(const struct in6_addr *saddr, co
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
         dst = ip6_dst_lookup_flow(skb->sk, &fl6, NULL);
 #else
-        dst = ip6_dst_lookup_flow(net, NULL, &fl6, NULL);
+        dst = ip6_dst_lookup_flow((struct net *)net, NULL, &fl6, NULL);
 #endif
 
 	if (IS_ERR(dst)) {
@@ -498,7 +498,7 @@ struct sk_buff *generate_and_send_udp_packet_v6(const struct in6_addr *saddr, co
 	new_skb->cb[47] = 147;
 
 	/* Send packet */
-	err = ip6_local_out(net, NULL, new_skb);
+	err = ip6_local_out((struct net *)net, NULL, new_skb);
 	if (err) {
 		pr_err("ip6_local_out failed: %d\n", err);
 		return NULL;
