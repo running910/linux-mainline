@@ -4,7 +4,7 @@
 
 #include "sysctl.h"
 #include "stun.h"
-#include "routing.h"
+#include "nfhook.h"
 
 static __exit void nf_garble_exit(void)
 {

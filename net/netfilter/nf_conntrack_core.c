@@ -1678,13 +1678,7 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	struct nf_conntrack_zone tmp;
 	struct nf_conn *ct;
 	u32 hash;
-#ifdef CONFIG_NF_GARBLE
-	//int reverse = 0;
 
-	const char *dev = "unknown";
-	if (skb->dev)
-		dev = skb->dev->name;
-#endif
 	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
 			     dataoff, state->pf, protonum, state->net,
 			     &tuple)) {
@@ -1698,27 +1692,10 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	h = __nf_conntrack_find_get(state->net, zone, &tuple, hash);
 	if (!h) {
 #ifdef CONFIG_NF_GARBLE
-
-		//if (state->net == &init_net) {
 		garble_mark_conn_first_packet(skb);
-		__log("########### new ct hook point: %s", garble_get_nf_hook_point(state->hook));
-		//}
-
-		// if (state->hook == NF_INET_PRE_ROUTING)
-		//	reverse = 1;
-		// garble_insert_udp_packet(skb, reverse, state->net);
-
-		// NF_INET_LOCAL_OUT and udp directly send obfuscation packet
-
-		// NF_INET_PRE_ROUTING and udp, mark it as first packet from new connection
-		// NF_INET_LOCAL_IN then test mark and send obfuscation packet 
-		// NF_INET_FORWARD then test mark and send obfuscation packet,and find original tuple to find src ip and port
+		//__log("########### new ct hook point: %s", garble_get_nf_hook_point(state->hook));
 #endif
-
-		
-
-		//log_skb_pref(skb, "hook point: %s", garble_get_nf_hook_point(state->hook));
-		log_skb_pref(skb, "ct was not found from nf_conntrack_hash... dev %s", dev);
+		log_skb_pref(skb, "ct was not found from nf_conntrack_hash... dev %s", skb->dev ? skb->dev->name : "unknown");
 		h = init_conntrack(state->net, tmpl, &tuple,
 				   skb, dataoff, hash);
 		if (!h)
@@ -1726,7 +1703,7 @@ resolve_normal_ct(struct nf_conn *tmpl,
 		if (IS_ERR(h))
 			return PTR_ERR(h);
 	} else {
-		log_skb_pref(skb, "ct was found from nf_conntrack_hash!!!! dev %s", dev);
+		log_skb_pref(skb, "ct was found from nf_conntrack_hash!!!! dev %s", skb->dev ? skb->dev->name : "unknown");
 	}
 	ct = nf_ct_tuplehash_to_ctrack(h);
 
@@ -1849,10 +1826,8 @@ nf_conntrack_in(struct sk_buff *skb, const struct nf_hook_state *state)
 	int dataoff, ret;
 
 	if (garble_check_if_obfuscation_packet(skb)) {
-		log_skb_pref(skb, "fake udp packet, bypass conntrack !!!!!!!!!!!!!!!!");
+		log_skb_pref(skb, "obfuscation packet, bypass conntrack !!!!!!!!!!!!!!!!");
 		return NF_ACCEPT;
-	} else {
-		log_skb_pref(skb, "normal udp packet!!!!!!!!!!");
 	}
 
 	tmpl = nf_ct_get(skb, &ctinfo);
@@ -1863,14 +1838,10 @@ nf_conntrack_in(struct sk_buff *skb, const struct nf_hook_state *state)
 		/* Previously seen (loopback or untracked)?  Ignore. */
 		if ((tmpl && !nf_ct_is_template(tmpl)) ||
 		     ctinfo == IP_CT_UNTRACKED) {
-			log_skb(skb, "are you kidding me just leave???");
 			return NF_ACCEPT;
-		     }
+		}
 		skb->_nfct = 0;
 	}
-
-	log_skb(skb, "still here not yeah");
-
 
 	/* rcu_read_lock()ed by nf_hook_thresh */
 	dataoff = get_l4proto(skb, skb_network_offset(skb), state->pf, &protonum);

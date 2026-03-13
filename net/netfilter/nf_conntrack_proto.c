@@ -171,12 +171,10 @@ static unsigned int ipv4_confirm(void *priv,
 	log_skb(skb, "######################### postrouting conntrack hook starts");
 
 	if (garble_check_if_obfuscation_packet(skb)) {
-		log_skb_pref(skb, "fake udp packet, bypass conntrack !!!!!!!!!!!!!!!!");
+		log_skb_pref(skb, "obfuscation packet, bypass conntrack !!!!!!!!!!!!!!!!");
 		return NF_ACCEPT;
-	} else {
-		log_skb_pref(skb, "normal udp packet!!!!!!!!!!");
 	}
-
+	
 	ct = nf_ct_get(skb, &ctinfo);
 	if (!ct || ctinfo == IP_CT_RELATED_REPLY) {
 

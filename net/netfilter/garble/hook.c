@@ -60,9 +60,6 @@ extern unsigned char *build_udp_payload(unsigned char *buf, int *out_len);
 
 #endif
 
-void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reverse);
-
-
 int check_local_ipaddr(u32 ipaddr)
 {
 	u32 local_order_ipaddr = ntohl(ipaddr);
@@ -343,7 +340,6 @@ void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
 }
 EXPORT_SYMBOL(garble_insert_udp_packet);
 
-
 void garble_insert_udp_packet_v6(const struct in6_addr *saddr, const struct in6_addr *daddr, __be16 sport, __be16 dport, const struct net *net)
 {
 	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
@@ -367,26 +363,6 @@ void garble_insert_udp_packet_v6(const struct in6_addr *saddr, const struct in6_
 		return;
 
 	generate_and_send_udp_packet_v6(saddr, daddr, sport, dport, net, payload, payload_len);
-}
-
-void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol, struct net *net)
-{
-        if (!garble_check_if_udp_enabled())
-		return;
-
-        if (!garble_check_if_udp_aggressive())
-		return;
-
-        if (unlikely(!garble_get_udp_avg_pkt()))
-                return;
-
-        if (prandom_u32() % garble_get_udp_avg_pkt() != 0)
-                return;
-
-	if (protocol == ETH_P_IP)
-		insert_packet_with_skb(skb, net, 0);
-        else if (protocol == ETH_P_IPV6)
-		insert_packet_with_skb(skb, net, 0);
 }
 
 void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reverse)
@@ -438,6 +414,26 @@ void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reve
 		
 		}
         }
+}
+
+void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol, struct net *net)
+{
+        if (!garble_check_if_udp_enabled())
+		return;
+
+        if (!garble_check_if_udp_aggressive())
+		return;
+
+        if (unlikely(!garble_get_udp_avg_pkt()))
+                return;
+
+        if (prandom_u32() % garble_get_udp_avg_pkt() != 0)
+                return;
+
+	if (protocol == ETH_P_IP)
+		insert_packet_with_skb(skb, net, 0);
+        else if (protocol == ETH_P_IPV6)
+		insert_packet_with_skb(skb, net, 0);
 }
 
 // calling path:

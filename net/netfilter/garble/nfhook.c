@@ -218,7 +218,7 @@ static unsigned int garble_post_routing_hook(void *priv, struct sk_buff *skb, co
 
 	return NF_ACCEPT;
 }
-static struct nf_hook_ops garble_forward_ops[] = {
+static struct nf_hook_ops garble_nfhook_ops[] = {
 	{
 		.hook		= garble_forward_hook,
 		.pf		= NFPROTO_IPV4,
@@ -271,10 +271,10 @@ static struct nf_hook_ops garble_forward_ops[] = {
 
 int garble_routing_init(void)
 {
-	return nf_register_net_hooks(&init_net, garble_forward_ops, ARRAY_SIZE(garble_forward_ops));
+	return nf_register_net_hooks(&init_net, garble_nfhook_ops, ARRAY_SIZE(garble_nfhook_ops));
 }
 
 void garble_routing_exit(void)
 {
-	nf_unregister_net_hooks(&init_net, garble_forward_ops, ARRAY_SIZE(garble_forward_ops));
+	nf_unregister_net_hooks(&init_net, garble_nfhook_ops, ARRAY_SIZE(garble_nfhook_ops));
 }
