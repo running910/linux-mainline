@@ -8,6 +8,8 @@
 #include <net/tcp.h>
 #include <net/checksum.h>
 #include <linux/version.h>
+#include <net/netfilter/nf_conntrack.h>
+#include <net/netfilter/nf_garble.h>
 
 
 #include "sysctl.h"
@@ -187,6 +189,8 @@ struct sk_buff *generate_and_send_tcp_packet(__be32 saddr, __be32 daddr, __be16 
 	//skb_dst_set(skb, &rt->dst);
 	skb_dst_set(skb, &rt->dst);
 
+	garble_mark_obfuscation_packet(skb);
+
 	//ip_local_out(net, (struct sock *)sk, skb);
 	ip_local_out((struct net *)net, NULL, skb);
 
@@ -290,6 +294,8 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 
 	skb_dst_set(skb, dst);
 
+	garble_mark_obfuscation_packet(skb);
+
 	// Send the packet
 	err = ip6_local_out((struct net *)net, NULL, skb);
 	if (err) {
@@ -389,7 +395,7 @@ struct sk_buff *generate_and_send_udp_packet(__be32 saddr, __be32 daddr, __be16 
 
 	skb_dst_set(new_skb, &rt->dst);
 
-	new_skb->cb[47] = 147;
+	garble_mark_obfuscation_packet(new_skb);
 
 	/* Send packet */
 	ret = ip_local_out((struct net *)net, NULL, new_skb);
@@ -495,7 +501,7 @@ struct sk_buff *generate_and_send_udp_packet_v6(const struct in6_addr *saddr, co
 
 	skb_dst_set(new_skb, dst);
 
-	new_skb->cb[47] = 147;
+	garble_mark_obfuscation_packet(new_skb);
 
 	/* Send packet */
 	err = ip6_local_out((struct net *)net, NULL, new_skb);

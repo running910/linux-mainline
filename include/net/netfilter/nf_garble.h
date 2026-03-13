@@ -22,6 +22,8 @@ static inline bool garble_check_if_conn_first_packet(struct sk_buff *skb)
 
 static inline bool garble_check_if_obfuscation_packet(struct sk_buff *skb)
 {
+	// maybe IP_CT_UNTRACKED can do the same thing, but we want to be more explicit 
+	// and not just rely on conntrack's behavior
 	return (u8)skb->cb[47] == 147;
 }
 

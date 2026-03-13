@@ -89,7 +89,7 @@ int check_local_ipaddr(u32 ipaddr)
 
 static bool check_local_traffic(u32 sip, u32 dip)
 {
-	return false;
+	//return false;
 
 	if (sip == dip) {
 		return true;
@@ -112,7 +112,7 @@ static int check_local_ipaddr_v6(const struct in6_addr *ipaddr)
 	u32 addr2 = ntohl(addr[2]);
 	u32 addr3 = ntohl(addr[3]);
 
-	return false;
+	//return false;
 
 	/* Check loopback address (::1/128) */
 	if (addr0 == IPV6_LOOPBACK_0 && addr1 == IPV6_LOOPBACK_1 && 
