@@ -76,7 +76,7 @@ static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const s
 
         // 必须不能是从LAN网卡发出的包，因为LAN网卡发出的包会在post routing hook处理
         if (state->in && garble_check_if_lan_nic(state->in->name)) {
-                __log("first packet of new connection from lan nic %s, should be handle in post routing", state->in->name);
+               // __log("first packet of new connection from lan nic %s, should be handle in post routing", state->in->name);
                 return NF_ACCEPT;
         }
 
@@ -85,7 +85,7 @@ static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const s
                 return NF_ACCEPT;
         }
 
-        __log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
+        //__log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
 
 	if (state->pf == NFPROTO_IPV4) {
 
@@ -102,7 +102,7 @@ static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const s
                         return NF_ACCEPT;
                 }
 
-                __log("now insert obfuscation udp packet for this orignal tuple of a new connection with reversing src and dst: %pI4:%u -> %pI4:%u",
+                __log("now insert obfuscation packet for this orignal tuple of a new connection with reversing src and dst: %pI4:%u -> %pI4:%u",
                                 &otuple->src.u3.ip, ntohs(otuple->src.u.tcp.port),
                                 &otuple->dst.u3.ip, ntohs(otuple->dst.u.tcp.port));
 
@@ -112,14 +112,16 @@ static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const s
                 // must be UDP, 因为前面已经过滤掉非TCP非UDP的包了
                 } else {
                         garble_insert_udp_packet(otuple->dst.u3.ip, otuple->src.u3.ip, otuple->dst.u.tcp.port, otuple->src.u.tcp.port, state->net);
-
                 } 
 
         } else if (state->pf == NFPROTO_IPV6) {
 
-                log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with reversing src and dst");
+                //log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with reversing src and dst");
                 insert_packet_with_skb(skb, state->net, 1);
         }
+
+        // 避免后续hook重复处理
+        garble_clear_packet_mark(skb);
 
         return NF_ACCEPT;
 }
@@ -137,9 +139,9 @@ static unsigned int garble_local_in_hook(void *priv, struct sk_buff *skb, const 
                 return NF_ACCEPT;
         }
 
-        __log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
-        log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with reversing src and dst");
-        __log("in=%s out=%s skb=%s", state->in ? state->in->name : "-", state->out ? state->out->name : "-", skb->dev ? skb->dev->name : "-");
+       // __log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
+        //log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with reversing src and dst");
+        //__log("in=%s out=%s skb=%s", state->in ? state->in->name : "-", state->out ? state->out->name : "-", skb->dev ? skb->dev->name : "-");
 
         insert_packet_with_skb(skb, state->net, 1);
 
@@ -159,10 +161,10 @@ static unsigned int garble_local_out_hook(void *priv, struct sk_buff *skb, const
                 return NF_ACCEPT;
         }
 
-	__log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
+	//__log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
 
-        log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection without reversing");
-        __log("in=%s out=%s skb=%s", state->in ? state->in->name : "-", state->out ? state->out->name : "-", skb->dev ? skb->dev->name : "-");
+        //log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection without reversing");
+        //__log("in=%s out=%s skb=%s", state->in ? state->in->name : "-", state->out ? state->out->name : "-", skb->dev ? skb->dev->name : "-");
 
         insert_packet_with_skb(skb, state->net, 0);
 
@@ -191,13 +193,13 @@ static unsigned int garble_post_routing_hook(void *priv, struct sk_buff *skb, co
 
         // 只处理lan nic发出的连接首包
         if (!state->in || !garble_check_if_lan_nic(state->in->name)) {
-                __log("first packet of new connection from nic [%s] not from lan nic, should have been handled!", state->in ? state->in->name : "-");
+               // __log("first packet of new connection from nic [%s] not from lan nic, should have been handled!", state->in ? state->in->name : "-");
                 return NF_ACCEPT;
         } 
 
-        __log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
+        //__log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
 
-        __log("in=%s out=%s skb=%s", state->in ? state->in->name : "-", state->out ? state->out->name : "-", skb->dev ? skb->dev->name : "-");
+       // __log("in=%s out=%s skb=%s", state->in ? state->in->name : "-", state->out ? state->out->name : "-", skb->dev ? skb->dev->name : "-");
 
         if ((garble_get_trans_proto(skb) == IPPROTO_TCP) && (!garble_check_if_tcp_client_enabled())) {
                 return NF_ACCEPT;
@@ -213,7 +215,7 @@ static unsigned int garble_post_routing_hook(void *priv, struct sk_buff *skb, co
                 return NF_ACCEPT;
         }
 
-        log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with SNATed src");
+      //  log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with SNATed src");
         insert_packet_with_skb(skb, state->net, 0);
 
 	return NF_ACCEPT;
@@ -269,12 +271,12 @@ static struct nf_hook_ops garble_nfhook_ops[] = {
 	},
 };
 
-int garble_routing_init(void)
+int garble_nfhook_init(void)
 {
 	return nf_register_net_hooks(&init_net, garble_nfhook_ops, ARRAY_SIZE(garble_nfhook_ops));
 }
 
-void garble_routing_exit(void)
+void garble_nfhook_exit(void)
 {
 	nf_unregister_net_hooks(&init_net, garble_nfhook_ops, ARRAY_SIZE(garble_nfhook_ops));
 }

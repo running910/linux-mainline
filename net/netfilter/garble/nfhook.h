@@ -1,7 +1,7 @@
-#ifndef __GARBLE_ROUTING_H__
-#define __GARBLE_ROUTING_H__
+#ifndef __GARBLE_NFHOOK_H__
+#define __GARBLE_NFHOOK_H__
 
-int garble_routing_init(void);
-void garble_routing_exit(void);
+int garble_nfhook_init(void);
+void garble_nfhook_exit(void);
 
-#endif // __GARBLE_ROUTING_H__
+#endif // __GARBLE_NFHOOK_H__
