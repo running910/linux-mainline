@@ -53,13 +53,14 @@ __u8 garble_get_trans_proto(struct sk_buff *skb)
         }
 }
 
-// 处理该路径首包：[outer -> wan -> lan -> inner]路径的连接首包
+// 处理该路径首包：[outer -> wan -> lan -> inner] both tcp and udp
 // 因为尚未知SNAT后的地址，无法处理该路径首包：[inner -> lan -> wan -> outer]
 static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
 {
         enum ip_conntrack_info ctinfo;
         const struct nf_conntrack_tuple *otuple;
         struct nf_conn *ct;
+        __u8 proto;
 
         if (!garble_check_if_routing_enabled())
 		return NF_ACCEPT;
@@ -68,13 +69,6 @@ static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const s
         if (state->net != &init_net)
                 return NF_ACCEPT;
 
-#if 0
-        // 需要结合网卡名判断，无法获取网卡名直接放行，避免误伤
-        if (!skb->dev) {
-                __log("skb->dev is NULL, bypass routing hook");
-                return NF_ACCEPT;
-        }
-#endif
         // 只对新连接的首包感兴趣
         if (!garble_check_if_conn_first_packet(skb)) {
                 return NF_ACCEPT;
@@ -86,19 +80,16 @@ static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const s
                 return NF_ACCEPT;
         }
 
-#if 0 
-        if (garble_check_if_lan_nic(skb->dev->name)) {
-                __log("first packet of new connection from lan nic %s, should be handle in post routing", skb->dev->name);
+        proto = garble_get_trans_proto(skb);
+        if (proto != IPPROTO_UDP && proto != IPPROTO_TCP) {
                 return NF_ACCEPT;
         }
-#endif
+
+        __log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
 
 	if (state->pf == NFPROTO_IPV4) {
-		const struct iphdr *iph = ip_hdr(skb);
 
-                if (!iph)
-                        return NF_ACCEPT;
-
+                // 这里已完成DNAT了，先获取连接跟踪信息，拿到原始tuple中的地址和端口
                 ct = nf_ct_get(skb, &ctinfo);
                 if (!ct) {
                         __log("no ct found for skb %p, dev %s", skb, skb->dev ? skb->dev->name : "-");
@@ -111,61 +102,29 @@ static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const s
                         return NF_ACCEPT;
                 }
 
-                __log("ORIG tuple: %pI4:%u -> %pI4:%u", &otuple->src.u3.ip, ntohs(otuple->src.u.tcp.port), &otuple->dst.u3.ip, ntohs(otuple->dst.u.tcp.port));
+                __log("now insert obfuscation udp packet for this orignal tuple of a new connection with reversing src and dst: %pI4:%u -> %pI4:%u",
+                                &otuple->src.u3.ip, ntohs(otuple->src.u.tcp.port),
+                                &otuple->dst.u3.ip, ntohs(otuple->dst.u.tcp.port));
 
-                if (iph->protocol == IPPROTO_TCP) {
-                        __log("first packet protocol: TCP (IPv4) in=%s out=%s skb=%s",
-                                state->in ? state->in->name : "-",
-                                state->out ? state->out->name : "-",
-                                skb->dev ? skb->dev->name : "-");
-
-                        __log("now insert obfuscation packet for this new connection tuple: %pI4:%u -> %pI4:%u",
-                                &otuple->dst.u3.ip, ntohs(otuple->dst.u.tcp.port),
-                                &otuple->src.u3.ip, ntohs(otuple->src.u.tcp.port));
-
+                if (proto == IPPROTO_TCP) {
                         garble_insert_tcp_packet(otuple->dst.u3.ip, otuple->src.u3.ip, otuple->dst.u.tcp.port, otuple->src.u.tcp.port, state->net);
 
-                } else if (iph->protocol == IPPROTO_UDP) {
-                        __log("first packet protocol: UDP (IPv4) in=%s out=%s skb=%s",
-                                state->in ? state->in->name : "-",
-                                state->out ? state->out->name : "-",
-                                skb->dev ? skb->dev->name : "-");
-
-                        __log("now insert obfuscation packet for this new connection tuple: %pI4:%u -> %pI4:%u",
-                                &otuple->dst.u3.ip, ntohs(otuple->dst.u.tcp.port),
-                                &otuple->src.u3.ip, ntohs(otuple->src.u.tcp.port)); 
-
+                // must be UDP, 因为前面已经过滤掉非TCP非UDP的包了
+                } else {
                         garble_insert_udp_packet(otuple->dst.u3.ip, otuple->src.u3.ip, otuple->dst.u.tcp.port, otuple->src.u.tcp.port, state->net);
 
-                } else {
-                        return NF_ACCEPT;
-                }
+                } 
 
         } else if (state->pf == NFPROTO_IPV6) {
-                const struct ipv6hdr *ip6h = ipv6_hdr(skb);
 
-                if (!ip6h)
-                        return NF_ACCEPT;
-
-                if (ip6h->nexthdr == IPPROTO_TCP) {
-                        __log("first packet protocol: TCP (IPv6) in=%s out=%s skb=%s",
-                                state->in ? state->in->name : "-",
-                                state->out ? state->out->name : "-",
-                                skb->dev ? skb->dev->name : "-");
-                } else if (ip6h->nexthdr == IPPROTO_UDP) {
-                        __log("first packet protocol: UDP (IPv6) in=%s out=%s skb=%s",
-                                state->in ? state->in->name : "-",
-                                state->out ? state->out->name : "-",
-                                skb->dev ? skb->dev->name : "-");
-                } else {
-                        return NF_ACCEPT;
-                }
+                log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with reversing src and dst");
+                insert_packet_with_skb(skb, state->net, 1);
         }
 
         return NF_ACCEPT;
 }
 
-// 处理该路径的udp首包：[outer -> wan -> local]
+// 处理该路径的udp首包：[outer -> wan -> local] udp only
 static unsigned int garble_local_in_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
 {
         // 只对新连接的首包感兴趣
@@ -178,8 +137,8 @@ static unsigned int garble_local_in_hook(void *priv, struct sk_buff *skb, const 
                 return NF_ACCEPT;
         }
 
-        __log("######### first packet of new udp connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
-        log_tuple_info(skb, "now insert obfuscation packet for this packet of new connection with reversing src and dst");
+        __log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
+        log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with reversing src and dst");
         __log("in=%s out=%s skb=%s", state->in ? state->in->name : "-", state->out ? state->out->name : "-", skb->dev ? skb->dev->name : "-");
 
         insert_packet_with_skb(skb, state->net, 1);
@@ -187,7 +146,7 @@ static unsigned int garble_local_in_hook(void *priv, struct sk_buff *skb, const 
         return NF_ACCEPT;
 }
 
-// 处理该路径的udp首包：[local -> wan -> outer]
+// 处理该路径的udp首包：[local -> wan -> outer] udp only
 static unsigned int garble_local_out_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
 {
         // 只对新连接的首包感兴趣
@@ -202,7 +161,7 @@ static unsigned int garble_local_out_hook(void *priv, struct sk_buff *skb, const
 
 	__log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
 
-        log_tuple_info(skb, "now insert obfuscation packet for this packet of new connection without reversing");
+        log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection without reversing");
         __log("in=%s out=%s skb=%s", state->in ? state->in->name : "-", state->out ? state->out->name : "-", skb->dev ? skb->dev->name : "-");
 
         insert_packet_with_skb(skb, state->net, 0);
@@ -213,10 +172,13 @@ static unsigned int garble_local_out_hook(void *priv, struct sk_buff *skb, const
 	return NF_ACCEPT;
 }
 
-// 处理该路径的udp首包：[inner -> lan -> wan -> outer]
+// 处理该路径的udp首包：[inner -> lan -> wan -> outer] both tcp and udp
 static unsigned int garble_post_routing_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
 {
         __u8 proto;
+
+        if (!garble_check_if_routing_enabled())
+		return NF_ACCEPT;
 
         // 只对新连接的首包感兴趣
         if (!garble_check_if_conn_first_packet(skb)) {
@@ -229,7 +191,7 @@ static unsigned int garble_post_routing_hook(void *priv, struct sk_buff *skb, co
 
         // 只处理lan nic发出的连接首包
         if (!state->in || !garble_check_if_lan_nic(state->in->name)) {
-                __log("first packet of new connection not from lan nic, should have been handled !in nic:%s", state->in ? state->in->name : "-");
+                __log("first packet of new connection from nic [%s] not from lan nic, should have been handled!", state->in ? state->in->name : "-");
                 return NF_ACCEPT;
         } 
 
@@ -246,11 +208,12 @@ static unsigned int garble_post_routing_hook(void *priv, struct sk_buff *skb, co
                 return NF_ACCEPT;
         }
 
+        // 如果是TCP，该路径只有开启tcp客户端模式才需要处理
         if ((proto == IPPROTO_TCP) && !garble_check_if_tcp_client_enabled()) {
                 return NF_ACCEPT;
         }
 
-        log_tuple_info(skb, "now insert obfuscation packet for this packet of new connection with SNATed src");
+        log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with SNATed src");
         insert_packet_with_skb(skb, state->net, 0);
 
 	return NF_ACCEPT;
