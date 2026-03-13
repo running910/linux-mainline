@@ -13,8 +13,8 @@
 #include "sysctl.h"
 
 
-#define DOMAINS_BUF_LEN 512
-#define MAX_DOMAINS     20
+#define DOMAINS_BUF_LEN 1048576
+#define MAX_DOMAINS     131072
 #define UDP_EXTRA_BUF_LEN 512
 #define LAN_NICS_BUF_LEN 512
 #define MAX_LAN_NICS    20
