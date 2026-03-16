@@ -2614,6 +2614,7 @@ static __always_inline unsigned int total_extension_size(void)
 int nf_conntrack_init_start(void)
 {
 	unsigned long nr_pages = totalram_pages();
+	unsigned long pages_per_gb = (1024UL * 1024UL * 1024UL) / PAGE_SIZE;
 	int max_factor = 8;
 	int ret = -ENOMEM;
 	int i;
@@ -2628,18 +2629,33 @@ int nf_conntrack_init_start(void)
 		spin_lock_init(&nf_conntrack_locks[i]);
 
 	if (!nf_conntrack_htable_size) {
-		/* Idea from tcp.c: use 1/16384 of memory.
-		 * On i386: 32MB machine has 512 buckets.
-		 * >= 1GB machines have 16384 buckets.
-		 * >= 4GB machines have 65536 buckets.
+		/* Two-tier hash table sizing on amd64
+		 * (each bucket is 8 bytes, hash table memory = buckets * 8,
+		 *  max connections = buckets * 4 when htable_size is auto-set):
+		 *
+		 * < 8GB:  use 1/2048 of memory (buckets = memory / 16384).
+		 *   32MB  ->    2048 buckets  (16 KB hash table,   8192 max conns).
+		 *   512MB ->   32768 buckets  (256 KB hash table,  131,072 max conns).
+		 *   1GB   ->   65536 buckets  (512 KB hash table,  262,144 max conns).
+		 *   4GB   ->  262144 buckets  (2 MB hash table,    1,048,576 max conns).
+		 *
+		 * >= 8GB: use 1/1024 of memory (buckets = memory / 8192).
+		 *   8GB   ->  1048576 buckets  (8 MB hash table,   4,194,304 max conns).
+		 *   16GB  ->  2097152 buckets  (16 MB hash table,  8,388,608 max conns).
+		 *   32GB  ->  4194304 buckets  (32 MB hash table,  16,777,216 max conns).
+		 *   64GB  ->  8388608 buckets  (64 MB hash table,  33,554,432 max conns).
+		 *   128GB -> 16777216 buckets  (128 MB hash table, 67,108,864 max conns).
+		 *   256GB -> 33554432 buckets  (256 MB hash table, 134,217,728 max conns).
+		 *   512GB -> 67108864 buckets  (512 MB hash table, 268,435,456 max conns).
 		 */
-		nf_conntrack_htable_size
-			= (((nr_pages << PAGE_SHIFT) / 16384)
-			   / sizeof(struct hlist_head));
-		if (nr_pages > (4 * (1024 * 1024 * 1024 / PAGE_SIZE)))
-			nf_conntrack_htable_size = 65536;
-		else if (nr_pages > (1024 * 1024 * 1024 / PAGE_SIZE))
-			nf_conntrack_htable_size = 16384;
+		if (nr_pages >= 8UL * pages_per_gb)
+			nf_conntrack_htable_size
+				= (((nr_pages << PAGE_SHIFT) / 1024)
+				   / sizeof(struct hlist_head));
+		else
+			nf_conntrack_htable_size
+				= (((nr_pages << PAGE_SHIFT) / 2048)
+				   / sizeof(struct hlist_head));
 		if (nf_conntrack_htable_size < 32)
 			nf_conntrack_htable_size = 32;
 
