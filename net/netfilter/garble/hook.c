@@ -274,8 +274,8 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
         if (garble_check_if_tcp_disabled())
                 return;
 
-      	if (check_local_traffic(saddr, daddr))
-                return;
+	if (!garble_check_if_local_obf_enabled() && check_local_traffic(saddr, daddr))
+		return;
 
 	if (check_if_well_known_tcp_port(dport))
                 return;
@@ -300,7 +300,7 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *saddr, const struct in6_
 	// it shows correct ip and port info
 	//__log("**** ipv6 tcp syn arrives remote %pI6c[port:%u] local %pI6c[port:%u] ******", daddr, ntohs(dport), saddr, ntohs(sport));
 
-	if (check_local_traffic_v6(saddr, daddr)) {
+	if (!garble_check_if_local_obf_enabled() && check_local_traffic_v6(saddr, daddr)) {
 		//__log("local traffic");
 		return;
 	}
@@ -325,7 +325,7 @@ void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
 	if (!garble_check_if_udp_enabled())
 		return;
 
-	if (check_local_traffic(saddr, daddr))
+	if (!garble_check_if_local_obf_enabled() && check_local_traffic(saddr, daddr))
 		return;
 
 	if (check_if_well_known_udp_port(dport))
@@ -351,7 +351,7 @@ void garble_insert_udp_packet_v6(const struct in6_addr *saddr, const struct in6_
         if (!garble_check_if_udp_enabled())
 		return;
 
-	if (check_local_traffic_v6(saddr, daddr)) {
+	if (!garble_check_if_local_obf_enabled() && check_local_traffic_v6(saddr, daddr)) {
 		return;
 	}
 
