@@ -102,9 +102,9 @@ static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const s
                         return NF_ACCEPT;
                 }
 
-                __log("now insert obfuscation packet for this orignal tuple of a new connection with reversing src and dst: %pI4:%u -> %pI4:%u",
-                                &otuple->src.u3.ip, ntohs(otuple->src.u.tcp.port),
-                                &otuple->dst.u3.ip, ntohs(otuple->dst.u.tcp.port));
+                //__log("now insert obfuscation packet for this orignal tuple of a new connection with reversing src and dst: %pI4:%u -> %pI4:%u",
+                 //               &otuple->src.u3.ip, ntohs(otuple->src.u.tcp.port),
+                  //              &otuple->dst.u3.ip, ntohs(otuple->dst.u.tcp.port));
 
                 if (proto == IPPROTO_TCP) {
                         garble_insert_tcp_packet(otuple->dst.u3.ip, otuple->src.u3.ip, otuple->dst.u.tcp.port, otuple->src.u.tcp.port, state->net);
