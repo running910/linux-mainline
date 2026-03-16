@@ -95,7 +95,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 				 * to ~3sec-8min depending on RTO.
 				 */
 
-#define TCP_RETR2	15	/*
+#define TCP_RETR2	5	/*
 				 * This should take at least
 				 * 90 minutes to time out.
 				 * RFC1122 says that the limit is 100 sec.
