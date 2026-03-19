@@ -170,35 +170,39 @@ static inline struct nf_conntrack_expect *find_expect_by_unmapped(struct nf_conn
 
 static inline u_int16_t select_new_port(struct sk_buff *skb, struct nf_conn *ct, const struct nf_nat_range2 *range, __be32 newsrc)
 {
-	u_int16_t newport;
-
-	u_int16_t minport, maxport, orgport;
+	u_int16_t maxport, orgport;
+	u_int32_t newport;  // use u32 to avoid overflow while self incrementing 
 
 	log_skb(skb, "configed port range minport %hu maxport %hu", ntohs(range->min_proto.all), ntohs(range->max_proto.all));
 
-	// if a port range is configured, select port within the configured range, 
-	// otherwise use the original port as the starting port
-	minport = ntohs(range->min_proto.all == 0 ? ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all : range->min_proto.all);
-	maxport = ntohs(range->max_proto.all == 0 ? htons(65535) : range->max_proto.all);
 	orgport = ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all);
 
-	log_skb(skb, "now start to choose port within minport %hu - maxport %hu", minport, maxport);
+	// if a port range is configured, select port within the configured range, 
+	// otherwise use the original port as the starting port
+	newport= range->min_proto.all == 0 ? orgport : ntohs(range->min_proto.all);
+	maxport = range->max_proto.all == 0 ? 65535 : ntohs(range->max_proto.all);
 
 	// ensure that the port parity remains the same before and after the 
 	// mapping, in accordance with RFC 4787
-	for (newport = minport | (orgport & 1); newport <= maxport; newport += 2) {
+	if ((newport & 1) != (orgport & 1)) {
+		newport += 1;
+	}
 
-		if (!find_expect_by_mapped(newsrc, htons(newport), ct)) {
-			log_skb_pref(skb, "new snat port has been finalized %hu", newport);
-			break;
+	log_skb(skb, "now start to choose port within  [%u - %hu]", newport, maxport);
+
+	while (newport <= maxport) {
+
+		if (!find_expect_by_mapped(newsrc, htons((u_int16_t)newport), ct)) {
+			log_skb_pref(skb, "new SNATed port %u is selected!", newport);
+			return htons((u_int16_t)newport);
 		}
+
+		newport += 2;
 	}
 
-	if (unlikely(newport > maxport)) {
-		log_skb_pref(skb, "new port %hu out of range!", newport);
-	}
+	log_skb_pref(skb, "can not select a new SNATed port within range!");
 
-	return newport <= maxport ? htons(newport) : 0;
+	return 0;
 }
 
 inline bool check_if_need_nathole(struct nf_conn *ct, __be32 newsrc)
