@@ -232,6 +232,7 @@ inline unsigned int do_nathole(struct sk_buff *skb, struct nf_conn *ct, const st
 
 		newport = select_new_port(skb, ct, range, newsrc);
 		if (unlikely(newport == 0)) {
+			spin_unlock_bh(&nf_conntrack_expect_lock);
 			return NF_DROP;
 		}
 	}
