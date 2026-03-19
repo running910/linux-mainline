@@ -52,4 +52,7 @@ const char linux_proc_banner[] =
 	" (" LINUX_COMPILE_BY "@" LINUX_COMPILE_HOST ")"
 	" (" LINUX_COMPILER ") %s\n";
 
+const char linux_src_banner[] =
+	"commit-id: " LINUX_GIT_COMMIT " git-status: " LINUX_GIT_STATUS "\n";
+
 BUILD_SALT;

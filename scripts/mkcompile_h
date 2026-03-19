@@ -8,6 +8,7 @@ PREEMPT=$4
 PREEMPT_RT=$5
 CC_VERSION="$6"
 LD=$7
+SRCTREE=${srctree}
 
 vecho() { [ "${quiet}" = "silent_" ] || echo "$@" ; }
 
@@ -40,6 +41,26 @@ else
 	LINUX_COMPILE_HOST=$KBUILD_BUILD_HOST
 fi
 
+if [ -z "$SRCTREE" ]; then
+	SRCTREE=.
+fi
+
+if command -v git >/dev/null 2>&1 && git -C "$SRCTREE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+	LINUX_GIT_COMMIT=$(git -C "$SRCTREE" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
+	if git -C "$SRCTREE" diff-index --quiet HEAD -- 2>/dev/null && \
+	   [ -z "$(git -C "$SRCTREE" ls-files --others --exclude-standard 2>/dev/null)" ]; then
+		LINUX_GIT_STATUS=clean
+	else
+		LINUX_GIT_STATUS=dirty
+	fi
+else
+	LINUX_GIT_COMMIT=unknown
+	LINUX_GIT_STATUS=unknown
+fi
+
+LINUX_GIT_COMMIT=$(printf '%s' "$LINUX_GIT_COMMIT" | sed 's/\\/\\\\/g; s/"/\\"/g')
+LINUX_GIT_STATUS=$(printf '%s' "$LINUX_GIT_STATUS" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
 UTS_VERSION="#$VERSION"
 CONFIG_FLAGS=""
 if [ -n "$SMP" ] ; then CONFIG_FLAGS="SMP"; fi
@@ -65,6 +86,8 @@ UTS_VERSION="$(echo $UTS_VERSION $CONFIG_FLAGS $TIMESTAMP | cut -b -$UTS_LEN)"
   LD_VERSION=$($LD -v | head -n1 | sed 's/(compatible with [^)]*)//' \
 		      | sed 's/[[:space:]]*$//')
   printf '#define LINUX_COMPILER "%s"\n' "$CC_VERSION, $LD_VERSION"
+  printf '#define LINUX_GIT_COMMIT "%s"\n' "$LINUX_GIT_COMMIT"
+  printf '#define LINUX_GIT_STATUS "%s"\n' "$LINUX_GIT_STATUS"
 } > .tmpcompile
 
 # Only replace the real compile.h if the new one is different,

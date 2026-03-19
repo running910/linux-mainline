@@ -23,6 +23,7 @@ proc-y	+= stat.o
 proc-y	+= uptime.o
 proc-y	+= util.o
 proc-y	+= version.o
+proc-y	+= src_version.o
 proc-y	+= softirqs.o
 proc-y	+= namespaces.o
 proc-y	+= self.o
