@@ -1683,28 +1683,51 @@ static struct neigh_table *neigh_tables[NEIGH_NR_TABLES] __read_mostly;
  * before the table is registered and accessible to other code, so there
  * are no concurrency concerns.
  */
-static void neigh_adjust_gc_thresholds(struct neigh_table *tbl)
+static void neigh_adjust_gc_thresholds(int index, struct neigh_table *tbl)
 {
 	unsigned long total_mem_pages = totalram_pages();
 	unsigned long mem_gb = (total_mem_pages << PAGE_SHIFT) >> 30;  /* Convert to GB */
 	int new_thresh1, new_thresh2, new_thresh3;
 
-	/*
-	 * Scale thresholds proportionally to system memory:
-	 * - Base thresh1 on roughly 1 entry per 16MB of RAM (minimum 128)
-	 *   (4096 pages × 4KB/page = 16MB)
-	 * - thresh2 = thresh1 * 4
-	 * - thresh3 = thresh1 * 8
-	 *
-	 * Example memory scaling:
-	 * 512MB:  thresh1=128,  thresh2=512,   thresh3=1024
-	 * 1GB:    thresh1=128,  thresh2=512,   thresh3=1024
-	 * 4GB:    thresh1=256,  thresh2=1024,  thresh3=2048
-	 * 8GB:    thresh1=512,  thresh2=2048,  thresh3=4096
-	 * 16GB:   thresh1=1024, thresh2=4096,  thresh3=8192
-	 * 32GB:   thresh1=2048, thresh2=8192,  thresh3=16384
-	 */
-	new_thresh1 = max(128, (int)(total_mem_pages >> 12));  /* divide by 4096 (16MB per entry) */
+	if (index == NEIGH_ARP_TABLE) {
+		/*
+		 * Scale thresholds proportionally to system memory:
+		 * - Base thresh1 on roughly 1 entry per 16MB of RAM (minimum 128)
+		 *   (4096 pages × 4KB/page = 16MB)
+		 * - thresh2 = thresh1 * 4
+		 * - thresh3 = thresh1 * 8
+		 *
+		 * Example memory scaling:
+		 * 512MB:  thresh1=128,  thresh2=512,   thresh3=1024
+		 * 1GB:    thresh1=128,  thresh2=512,   thresh3=1024
+		 * 4GB:    thresh1=256,  thresh2=1024,  thresh3=2048
+		 * 8GB:    thresh1=512,  thresh2=2048,  thresh3=4096
+		 * 16GB:   thresh1=1024, thresh2=4096,  thresh3=8192
+		 * 32GB:   thresh1=2048, thresh2=8192,  thresh3=16384
+		 */
+		new_thresh1 = max(128, (int)(total_mem_pages >> 12));  /* divide by 4096 (16MB per entry) */
+
+	} else if (index == NEIGH_ND_TABLE) {
+		/*
+		 * Scale thresholds proportionally to system memory:
+		 * - Base thresh1 on roughly 1 entry per 4MB of RAM (minimum 128)
+		 *   (1024 pages × 4KB/page = 4MB)
+		 * - thresh2 = thresh1 * 4
+		 * - thresh3 = thresh1 * 8
+		 *
+		 * Example memory scaling:
+		 * 512MB:  thresh1=128,  thresh2=512,   thresh3=1024
+		 * 1GB:    thresh1=256,  thresh2=1024,  thresh3=2048
+		 * 4GB:    thresh1=1024, thresh2=4096,  thresh3=8192
+		 * 8GB:    thresh1=2048, thresh2=8192,  thresh3=16384
+		 * 16GB:   thresh1=4096, thresh2=16384, thresh3=32768
+		 * 32GB:   thresh1=8192, thresh2=32768, thresh3=65536
+		 */
+		new_thresh1 = max(128, (int)(total_mem_pages >> 10));  /* divide by 1024 (4MB per entry) */
+	} else {
+		return;
+	}
+
 	new_thresh2 = new_thresh1 << 2;  /* multiply by 4 */
 	new_thresh3 = new_thresh1 << 3;  /* multiply by 8 */
 
@@ -1723,8 +1746,8 @@ void neigh_table_init(int index, struct neigh_table *tbl)
 	unsigned long now = jiffies;
 	unsigned long phsize;
 
-	if (index == NEIGH_ARP_TABLE)
-		neigh_adjust_gc_thresholds(tbl);
+	if ((index == NEIGH_ARP_TABLE) || (index == NEIGH_ND_TABLE))
+		neigh_adjust_gc_thresholds(index, tbl);
 
 	INIT_LIST_HEAD(&tbl->parms_list);
 	INIT_LIST_HEAD(&tbl->gc_list);
