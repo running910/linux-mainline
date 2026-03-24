@@ -177,6 +177,12 @@ struct neigh_table arp_tbl = {
 		},
 	},
 	.gc_interval	= 30 * HZ,
+	/* Note: gc_thresh values below are placeholders and will be
+	 * dynamically adjusted in neigh_table_init() based on system memory.
+	 * They are initialized with safe defaults to handle any edge cases,
+	 * though they should never be accessed before neigh_table_init()
+	 * completes, as the table is not registered until after initialization.
+	 */
 	.gc_thresh1	= 128,
 	.gc_thresh2	= 512,
 	.gc_thresh3	= 1024,
