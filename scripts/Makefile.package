@@ -29,7 +29,7 @@ KDEB_SOURCENAME ?= linux-$(KERNELRELEASE)
 KBUILD_PKG_ROOTCMD ?="fakeroot -u"
 export KDEB_SOURCENAME
 # Include only those top-level files that are needed by make, plus the GPL copy
-TAR_CONTENT := $(KBUILD_ALLDIRS) .config .scmversion Makefile \
+TAR_CONTENT := $(KBUILD_ALLDIRS) .config .scmversion .gitinfo Makefile \
                Kbuild Kconfig COPYING $(wildcard localversion*)
 MKSPEC     := $(srctree)/scripts/package/mkspec
 
@@ -54,6 +54,7 @@ rm -f $(objtree)/.scmversion
 PHONY += rpm-pkg
 rpm-pkg:
 	$(MAKE) clean
+	$(CONFIG_SHELL) $(srctree)/scripts/package/gen-gitinfo $(objtree)/.gitinfo
 	$(CONFIG_SHELL) $(MKSPEC) >$(objtree)/kernel.spec
 	$(call cmd,src_tar,$(KERNELPATH),kernel.spec)
 	+rpmbuild $(RPMOPTS) --target $(UTS_MACHINE) -ta $(KERNELPATH).tar.gz \
@@ -64,6 +65,7 @@ rpm-pkg:
 PHONY += binrpm-pkg
 binrpm-pkg:
 	$(MAKE) -f $(srctree)/Makefile
+	$(CONFIG_SHELL) $(srctree)/scripts/package/gen-gitinfo $(objtree)/.gitinfo
 	$(CONFIG_SHELL) $(MKSPEC) prebuilt > $(objtree)/binkernel.spec
 	+rpmbuild $(RPMOPTS) --define "_builddir $(objtree)" --target \
 		$(UTS_MACHINE) -bb $(objtree)/binkernel.spec
@@ -71,6 +73,7 @@ binrpm-pkg:
 PHONY += deb-pkg
 deb-pkg:
 	$(MAKE) clean
+	$(CONFIG_SHELL) $(srctree)/scripts/package/gen-gitinfo $(objtree)/.gitinfo
 	$(CONFIG_SHELL) $(srctree)/scripts/package/mkdebian
 	$(call cmd,src_tar,$(KDEB_SOURCENAME))
 	origversion=$$(dpkg-parsechangelog -SVersion |sed 's/-[^-]*$$//');\

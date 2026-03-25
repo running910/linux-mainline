@@ -45,7 +45,11 @@ if [ -z "$SRCTREE" ]; then
 	SRCTREE=.
 fi
 
-if command -v git >/dev/null 2>&1 && git -C "$SRCTREE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+# Try to get git info: first check if .git directory exists (from git repo),
+# if not, try to read from .gitinfo file (from RPM package), otherwise use defaults
+if [ -d "$SRCTREE/.git" ] && command -v git >/dev/null 2>&1 && \
+   git -C "$SRCTREE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+	# We have a .git directory, use git commands
 	LINUX_GIT_COMMIT=$(git -C "$SRCTREE" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 	if git -C "$SRCTREE" diff-index --quiet HEAD -- 2>/dev/null && \
 	   [ -z "$(git -C "$SRCTREE" ls-files --others --exclude-standard 2>/dev/null)" ]; then
@@ -53,7 +57,11 @@ if command -v git >/dev/null 2>&1 && git -C "$SRCTREE" rev-parse --is-inside-wor
 	else
 		LINUX_GIT_STATUS=dirty
 	fi
+elif [ -f "$SRCTREE/.gitinfo" ]; then
+	# No .git directory, try to read from .gitinfo file (used in RPM packages)
+	. "$SRCTREE/.gitinfo"
 else
+	# Neither .git nor .gitinfo, use defaults
 	LINUX_GIT_COMMIT=unknown
 	LINUX_GIT_STATUS=unknown
 fi
