@@ -171,16 +171,20 @@ static inline struct nf_conntrack_expect *find_expect_by_unmapped(struct nf_conn
 static inline u_int16_t select_new_port(struct sk_buff *skb, struct nf_conn *ct, const struct nf_nat_range2 *range, __be32 newsrc)
 {
 	u_int16_t maxport, orgport;
-	u_int32_t newport;  // use u32 to avoid overflow while self incrementing 
+	u_int32_t newport;  // use u32 to avoid overflow while self incrementing
+	u_int16_t rangemin, rangemax;
 
-	log_skb(skb, "configed port range minport %hu maxport %hu", ntohs(range->min_proto.all), ntohs(range->max_proto.all));
+	rangemin = ntohs(range->min_proto.all);
+	rangemax = ntohs(range->max_proto.all);
+
+	log_skb(skb, "configed port range minport %hu maxport %hu", rangemin, rangemax);
 
 	orgport = ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all);
 
 	// if a port range is configured, select port within the configured range, 
 	// otherwise use the original port as the starting port
-	newport= range->min_proto.all == 0 ? orgport : ntohs(range->min_proto.all);
-	maxport = range->max_proto.all == 0 ? 65535 : ntohs(range->max_proto.all);
+	newport = rangemin == 0 ? orgport : rangemin;
+	maxport = rangemax == 0 ? 65535 : rangemax;
 
 	// ensure that the port parity remains the same before and after the 
 	// mapping, in accordance with RFC 4787
@@ -199,6 +203,23 @@ static inline u_int16_t select_new_port(struct sk_buff *skb, struct nf_conn *ct,
 
 		newport += 2;
 	}
+
+	/* if no port range is configured in the MASQUERADE rule and the original port
+	 * is large enough, try to find an available port by decrementing from the
+	 * original port while maintaining the same port parity (RFC 4787).
+	 */
+	if ((rangemin == 0) && (rangemax == 0) && (orgport > 1024)) {
+
+		for (newport = orgport - 2; newport > 1024; newport -= 2) {
+			if (!find_expect_by_mapped(newsrc, htons((u_int16_t)newport), ct)) {
+				log_skb_pref(skb, "new SNATed port %u is selected by reducing original port", newport);
+				return htons((u_int16_t)newport);
+			}
+		}
+	}
+	/*
+	 * ignore the unreasonable rule where rangemin is 0 and rangemax is non-zero.
+	 */
 
 	log_skb_pref(skb, "can not select a new SNATed port within range!");
 
