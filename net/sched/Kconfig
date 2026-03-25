@@ -439,6 +439,22 @@ config NET_SCH_ETS
 
 	  If unsure, say N.
 
+config NET_SCH_PTB
+	tristate "Priority Token Bucket (PTB)"
+	default m
+	help
+	  The Priority Token Bucket scheduler is mix prio scheduler with tbf.
+	  PTB provide 3 bands, the high/mid band is same as PRIO and the low
+	  band is same as TBF.
+
+	  Say Y here if you want to use the PTB packet scheduling
+	  algorithm.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called sch_ets.
+
+	  If unsure, say N.
+
 menuconfig NET_SCH_DEFAULT
 	bool "Allow override default queue discipline"
 	help
