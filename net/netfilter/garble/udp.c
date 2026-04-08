@@ -73,8 +73,6 @@ inline unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len
 
 inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
 {
-	const char *domain = NULL;
-
 	if (garble_check_if_udp_binary_enabled())
 		return build_payload_from_binary(buf, out_len);
 
@@ -86,10 +84,7 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
 	case UDP_OBF_SIP_INVITE:
 		return build_sip_payload(buf, out_len);
 	case UDP_OBF_DTLS:
-		domain = garble_get_random_domain();
-		if (!domain)
-			return NULL;
-		return build_dtls_client_hello(buf, out_len, domain);
+		return build_dtls_client_hello(buf, out_len, garble_get_random_domain());
 	default:
 		return NULL;
 	}

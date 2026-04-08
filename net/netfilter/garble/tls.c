@@ -75,42 +75,46 @@ inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, c
 	buf[offset++] = 0x01;                 // compression_methods length
 	buf[offset++] = 0x00;                 // null compression
 
-	// Extensions
-	ext_offset = offset;
-	offset += 2; // extensions length placeholder
+	/* Extensions are optional in ClientHello.
+	 * Only add server_name when sni is provided and non-empty.
+	 */
+	if (sni && *sni) {
+		ext_offset = offset;
+		offset += 2; // extensions length placeholder
 
-	sni_len = strlen(sni);
+		sni_len = strlen(sni);
 
-	// Extension Type: server_name (0x0000)
-	buf[offset++] = 0x00;
-	buf[offset++] = 0x00;
+		// Extension Type: server_name (0x0000)
+		buf[offset++] = 0x00;
+		buf[offset++] = 0x00;
 
-	// Extension Data Length:
-	// = 2 (name_list_len) + 1 (name_type) + 2 (host_name_len) + sni_len
-	ext_len = 2 + 1 + 2 + sni_len;
-	buf[offset++] = (ext_len >> 8) & 0xFF;
-	buf[offset++] = ext_len & 0xFF;
+		// Extension Data Length:
+		// = 2 (name_list_len) + 1 (name_type) + 2 (host_name_len) + sni_len
+		ext_len = 2 + 1 + 2 + sni_len;
+		buf[offset++] = (ext_len >> 8) & 0xFF;
+		buf[offset++] = ext_len & 0xFF;
 
-	// ServerNameList length
-	name_list_len = 1 + 2 + sni_len;
-	buf[offset++] = (name_list_len >> 8) & 0xFF;
-	buf[offset++] = name_list_len & 0xFF;
+		// ServerNameList length
+		name_list_len = 1 + 2 + sni_len;
+		buf[offset++] = (name_list_len >> 8) & 0xFF;
+		buf[offset++] = name_list_len & 0xFF;
 
-	// name_type: host_name (0x00)
-	buf[offset++] = 0x00;
+		// name_type: host_name (0x00)
+		buf[offset++] = 0x00;
 
-	// host_name_len
-	buf[offset++] = (sni_len >> 8) & 0xFF;
-	buf[offset++] = sni_len & 0xFF;
+		// host_name_len
+		buf[offset++] = (sni_len >> 8) & 0xFF;
+		buf[offset++] = sni_len & 0xFF;
 
-	// host_name
-	memcpy(buf + offset, sni, sni_len);
-	offset += sni_len;
+		// host_name
+		memcpy(buf + offset, sni, sni_len);
+		offset += sni_len;
 
-	// Write total extensions length
-	ext_total_len = offset - ext_offset - 2;
-	buf[ext_offset++] = ext_total_len >> 8;
-	buf[ext_offset++] = ext_total_len & 0xFF;
+		// Write total extensions length
+		ext_total_len = offset - ext_offset - 2;
+		buf[ext_offset++] = ext_total_len >> 8;
+		buf[ext_offset++] = ext_total_len & 0xFF;
+	}
 
 	// === 更新握手消息长度 ===
 	{
@@ -233,41 +237,45 @@ inline unsigned char *build_dtls_client_hello(unsigned char *buf, int *out_len, 
 	buf[offset++] = 0x01;                // compression_methods length
 	buf[offset++] = 0x00;                // null compression
 
-	// Extensions
-	ext_offset = offset;
-	offset += 2; // extensions length placeholder
+	/* Extensions are optional in ClientHello.
+	 * Only add server_name when sni is provided and non-empty.
+	 */
+	if (sni && *sni) {
+		ext_offset = offset;
+		offset += 2; // extensions length placeholder
 
-	sni_len = strlen(sni);
+		sni_len = strlen(sni);
 
-	// Extension Type: server_name (0x0000)
-	buf[offset++] = 0x00;
-	buf[offset++] = 0x00;
+		// Extension Type: server_name (0x0000)
+		buf[offset++] = 0x00;
+		buf[offset++] = 0x00;
 
-	// Extension Data Length
-	ext_len = 2 + 1 + 2 + sni_len;
-	buf[offset++] = (ext_len >> 8) & 0xFF;
-	buf[offset++] = ext_len & 0xFF;
+		// Extension Data Length
+		ext_len = 2 + 1 + 2 + sni_len;
+		buf[offset++] = (ext_len >> 8) & 0xFF;
+		buf[offset++] = ext_len & 0xFF;
 
-	// ServerNameList length
-	name_list_len = 1 + 2 + sni_len;
-	buf[offset++] = (name_list_len >> 8) & 0xFF;
-	buf[offset++] = name_list_len & 0xFF;
+		// ServerNameList length
+		name_list_len = 1 + 2 + sni_len;
+		buf[offset++] = (name_list_len >> 8) & 0xFF;
+		buf[offset++] = name_list_len & 0xFF;
 
-	// name_type: host_name (0x00)
-	buf[offset++] = 0x00;
+		// name_type: host_name (0x00)
+		buf[offset++] = 0x00;
 
-	// host_name_len
-	buf[offset++] = (sni_len >> 8) & 0xFF;
-	buf[offset++] = sni_len & 0xFF;
+		// host_name_len
+		buf[offset++] = (sni_len >> 8) & 0xFF;
+		buf[offset++] = sni_len & 0xFF;
 
-	// host_name
-	memcpy(buf + offset, sni, sni_len);
-	offset += sni_len;
+		// host_name
+		memcpy(buf + offset, sni, sni_len);
+		offset += sni_len;
 
-	// Write total extensions length
-	ext_total_len = offset - ext_offset - 2;
-	buf[ext_offset++] = ext_total_len >> 8;
-	buf[ext_offset++] = ext_total_len & 0xFF;
+		// Write total extensions length
+		ext_total_len = offset - ext_offset - 2;
+		buf[ext_offset++] = ext_total_len >> 8;
+		buf[ext_offset++] = ext_total_len & 0xFF;
+	}
 
 	// === 更新握手消息长度 ===
 	{
