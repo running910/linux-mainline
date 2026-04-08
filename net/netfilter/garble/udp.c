@@ -12,14 +12,7 @@
 #include "stun.h"
 #include "sip.h"
 
-enum udp_obf_proto {
-	UDP_OBF_STUN_REQUEST = 0,
-	UDP_OBF_WECHAT_VIDEO = 1,
-	UDP_OBF_SIP_INVITE = 2,
-	UDP_OBF_DTLS = 3,
 
-	UDP_OBF_PROTO_MAX
-};
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
 

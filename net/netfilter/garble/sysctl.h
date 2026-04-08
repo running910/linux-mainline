@@ -64,4 +64,13 @@ extern int garble_check_if_lan_nic(const char *nic);
 
 #endif
 
+enum udp_obf_proto {
+	UDP_OBF_STUN_REQUEST = 0,
+	UDP_OBF_WECHAT_VIDEO = 1,
+	UDP_OBF_SIP_INVITE = 2,
+	UDP_OBF_DTLS = 3,
+
+	UDP_OBF_PROTO_MAX
+};
+
 #endif // __GARBLE_SYSCTL_H__

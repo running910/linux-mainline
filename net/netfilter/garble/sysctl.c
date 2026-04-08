@@ -49,7 +49,7 @@ static int garble_routing_enabled = 0;
 static int garble_tcp_binary_payload = 0;
 static int garble_udp_binary_payload = 0;
 static int garble_udp_ttl = 3;                          // Default TTL value for UDP packets
-static int garble_udp_obf_proto = 0;                    // UDP obfuscation proto: 0=stun allocate request, 1=wechat live video, 2=sip invite
+static int garble_udp_obf_proto = 0;                    // UDP obfuscation proto: 0=stun allocate request, 1=wechat live video, 2=sip invite, 3=dtls client hello
 static int garble_tcp_ttl = 3;                          // Default TTL value for TCP packets
 static char garble_udp_extra[UDP_EXTRA_BUF_LEN] ={0};   // UDP extra configuration string
 
@@ -141,9 +141,9 @@ static int proc_handler_udp_obf_proto(struct ctl_table *table, int write,
 		return ret;
 	}
 
-	/* Validate obfuscation proto range [0, 2] */
-	if (new_obf_pro < 0 || new_obf_pro > 2) {
-		pr_info("garble: UDP obfuscation proto value %d is out of range [0, 2]\n", new_obf_pro);
+	/* Validate obfuscation proto range [0, UDP_OBF_PROTO_MAX - 1] */
+	if (new_obf_pro < 0 || new_obf_pro >= UDP_OBF_PROTO_MAX) {
+		pr_info("garble: UDP obfuscation proto value %d is out of range [0, %d]\n", new_obf_pro, UDP_OBF_PROTO_MAX - 1);
 		return -EINVAL;
 	}
 
