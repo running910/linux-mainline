@@ -16,9 +16,20 @@ enum udp_obf_proto {
 	UDP_OBF_STUN_REQUEST = 0,
 	UDP_OBF_WECHAT_VIDEO = 1,
 	UDP_OBF_SIP_INVITE = 2,
+	UDP_OBF_DTLS = 3,
 
 	UDP_OBF_PROTO_MAX
 };
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+
+inline unsigned char *build_dtls_client_hello(unsigned char *buf, int *out_len, const char *sni);
+
+#else
+
+extern unsigned char *build_dtls_client_hello(unsigned char *buf, int *out_len, const char *sni);
+
+#endif
 
 inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_len)
 {
@@ -69,6 +80,7 @@ inline unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len
 
 inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
 {
+	const char *domain = NULL;
 
 	if (garble_check_if_udp_binary_enabled())
 		return build_payload_from_binary(buf, out_len);
@@ -80,6 +92,11 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
 		return build_wechat_video_call_msg(buf, out_len);
 	case UDP_OBF_SIP_INVITE:
 		return build_sip_payload(buf, out_len);
+	case UDP_OBF_DTLS:
+		domain = garble_get_random_domain();
+		if (!domain)
+			return NULL;
+		return build_dtls_client_hello(buf, out_len, domain);
 	default:
 		return NULL;
 	}

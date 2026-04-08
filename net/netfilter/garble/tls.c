@@ -131,3 +131,165 @@ inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, c
 
 	return buf;
 }
+
+inline unsigned char *build_dtls_client_hello(unsigned char *buf, int *out_len, const char *sni)
+{
+	int offset = 0;
+	int hello_start;
+	int i;
+	int cipher_suite_len;
+	int ext_offset;
+	int sni_len;
+	int ext_len;
+	int name_list_len;
+	int ext_total_len;
+	int record_len_offset;
+	int handshake_len_offset;
+	
+	// Cipher Suites (same as TLS)
+	static const unsigned char cipher_suites[] = {
+		0xc0, 0x2b,     // TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+		0xc0, 0x13,     // TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+		0x00, 0x35,     // TLS_RSA_AES128_SHA
+		0xc0, 0x2f,     // TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+		0xc0, 0x27,     // TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+		0xc0, 0x23,     // TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+		0xc0, 0x14,     // TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+		0x00, 0x9c,     // TLS_RSA_WITH_AES_128_GCM_SHA256
+		0x00, 0x3c,     // TLS_RSA_WITH_AES_128_SHA256
+		0x00, 0x2f,     // TLS_RSA_AES128_SHA
+		0xc0, 0x30,     // TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384
+		0xc0, 0x2c,     // TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+		0xc0, 0x28,     // TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384
+		0xc0, 0x24,     // TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+		0x00, 0x9d,     // TLS_RSA_WITH_AES_256_GCM_SHA384
+		0x00, 0x3d,     // TLS_RSA_WITH_AES_256_SHA256
+		0x00, 0x35,     // TLS_RSA_AES256_SHA
+		0x00, 0xff      // Extended Master Secret
+	};
+
+	// === DTLS Record Header (13 bytes) ===
+	buf[offset++] = 0x16;                 // content_type: handshake
+	buf[offset++] = 0xfe;                 // version: DTLS 1.2
+	buf[offset++] = 0xfd;
+
+	buf[offset++] = 0x00;                 // epoch (2 bytes)
+	buf[offset++] = 0x00;
+
+	buf[offset++] = 0x00;                 // sequence_number (6 bytes)
+	buf[offset++] = 0x00;
+	buf[offset++] = 0x00;
+	buf[offset++] = 0x00;
+	buf[offset++] = 0x00;
+	buf[offset++] = 0x00;
+
+	record_len_offset = offset;
+	buf[offset++] = 0x00;                 // length (placeholder)
+	buf[offset++] = 0x00;
+
+	// === DTLS Handshake Header (12 bytes) ===
+	buf[offset++] = 0x01;                 // msg_type: client_hello
+
+	handshake_len_offset = offset;
+	buf[offset++] = 0x00;                 // handshake message length (3 bytes, placeholder)
+	buf[offset++] = 0x00;
+	buf[offset++] = 0x00;
+
+	buf[offset++] = 0x00;                 // message_seq (2 bytes)
+	buf[offset++] = 0x00;
+
+	buf[offset++] = 0x00;                 // fragment_offset (3 bytes)
+	buf[offset++] = 0x00;
+	buf[offset++] = 0x00;
+
+	buf[offset++] = 0x00;                 // fragment_length (3 bytes, placeholder, same as message length)
+	buf[offset++] = 0x00;
+	buf[offset++] = 0x00;
+
+	hello_start = offset;
+
+	// === ClientHello Body ===
+	buf[offset++] = 0x03;                // legacy_version (2 bytes)
+	buf[offset++] = 0x03;
+
+	// random (32 bytes)
+	for (i = 0; i < 8; i++) {
+		*(u32 *)(buf+offset) = prandom_u32(); 
+		offset += sizeof(u32);
+	}
+
+	buf[offset++] = 0x00;                // session_id length
+
+	// cookie (DTLS specific - empty for initial ClientHello)
+	buf[offset++] = 0x00;                // cookie length
+
+	cipher_suite_len = sizeof(cipher_suites);
+	buf[offset++] = cipher_suite_len >> 8;
+	buf[offset++] = cipher_suite_len & 0xFF;
+	memcpy(buf + offset, cipher_suites, cipher_suite_len);
+	offset += cipher_suite_len;
+
+	// Compression Methods
+	buf[offset++] = 0x01;                // compression_methods length
+	buf[offset++] = 0x00;                // null compression
+
+	// Extensions
+	ext_offset = offset;
+	offset += 2; // extensions length placeholder
+
+	sni_len = strlen(sni);
+
+	// Extension Type: server_name (0x0000)
+	buf[offset++] = 0x00;
+	buf[offset++] = 0x00;
+
+	// Extension Data Length
+	ext_len = 2 + 1 + 2 + sni_len;
+	buf[offset++] = (ext_len >> 8) & 0xFF;
+	buf[offset++] = ext_len & 0xFF;
+
+	// ServerNameList length
+	name_list_len = 1 + 2 + sni_len;
+	buf[offset++] = (name_list_len >> 8) & 0xFF;
+	buf[offset++] = name_list_len & 0xFF;
+
+	// name_type: host_name (0x00)
+	buf[offset++] = 0x00;
+
+	// host_name_len
+	buf[offset++] = (sni_len >> 8) & 0xFF;
+	buf[offset++] = sni_len & 0xFF;
+
+	// host_name
+	memcpy(buf + offset, sni, sni_len);
+	offset += sni_len;
+
+	// Write total extensions length
+	ext_total_len = offset - ext_offset - 2;
+	buf[ext_offset++] = ext_total_len >> 8;
+	buf[ext_offset++] = ext_total_len & 0xFF;
+
+	// === 更新握手消息长度 ===
+	{
+		int handshake_len = offset - hello_start;
+		buf[handshake_len_offset] = (handshake_len >> 16) & 0xFF;
+		buf[handshake_len_offset + 1] = (handshake_len >> 8) & 0xFF;
+		buf[handshake_len_offset + 2] = handshake_len & 0xFF;
+
+		// fragment_length same as message length
+		buf[handshake_len_offset + 6] = (handshake_len >> 16) & 0xFF;
+		buf[handshake_len_offset + 7] = (handshake_len >> 8) & 0xFF;
+		buf[handshake_len_offset + 8] = handshake_len & 0xFF;
+	}
+
+	// === 更新 DTLS 记录长度 ===
+	{
+		int total_len = offset - record_len_offset - 2;
+		buf[record_len_offset] = (total_len >> 8) & 0xFF;
+		buf[record_len_offset + 1] = total_len & 0xFF;
+	}
+
+	*out_len = offset;
+
+	return buf;
+}
