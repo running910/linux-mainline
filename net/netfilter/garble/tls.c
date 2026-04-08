@@ -209,8 +209,8 @@ inline unsigned char *build_dtls_client_hello(unsigned char *buf, int *out_len, 
 	hello_start = offset;
 
 	// === ClientHello Body ===
-	buf[offset++] = 0x03;                // legacy_version (2 bytes)
-	buf[offset++] = 0x03;
+	buf[offset++] = 0xfe;                // client_version: DTLS 1.2
+	buf[offset++] = 0xfd;
 
 	// random (32 bytes)
 	for (i = 0; i < 8; i++) {
@@ -272,19 +272,22 @@ inline unsigned char *build_dtls_client_hello(unsigned char *buf, int *out_len, 
 	// === 更新握手消息长度 ===
 	{
 		int handshake_len = offset - hello_start;
-		buf[handshake_len_offset] = (handshake_len >> 16) & 0xFF;
+		// Write handshake message length at offset 0-2
+		buf[handshake_len_offset + 0] = (handshake_len >> 16) & 0xFF;
 		buf[handshake_len_offset + 1] = (handshake_len >> 8) & 0xFF;
 		buf[handshake_len_offset + 2] = handshake_len & 0xFF;
 
-		// fragment_length same as message length
-		buf[handshake_len_offset + 6] = (handshake_len >> 16) & 0xFF;
-		buf[handshake_len_offset + 7] = (handshake_len >> 8) & 0xFF;
-		buf[handshake_len_offset + 8] = handshake_len & 0xFF;
+		// Write fragment_length at offset 8-10 (same as message length)
+		buf[handshake_len_offset + 8] = (handshake_len >> 16) & 0xFF;
+		buf[handshake_len_offset + 9] = (handshake_len >> 8) & 0xFF;
+		buf[handshake_len_offset + 10] = handshake_len & 0xFF;
 	}
 
 	// === 更新 DTLS 记录长度 ===
 	{
-		int total_len = offset - record_len_offset - 2;
+		// Record Length = 从Handshake Type开始到body结束的所有字节数
+		// record_len_offset + 2 跳过Length字段本身，从msg_type开始计数
+		int total_len = offset - (record_len_offset + 2);
 		buf[record_len_offset] = (total_len >> 8) & 0xFF;
 		buf[record_len_offset + 1] = total_len & 0xFF;
 	}
