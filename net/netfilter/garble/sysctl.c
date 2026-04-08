@@ -44,6 +44,7 @@ static int garble_udp_aggressive = 0;
 static int garble_udp_avg_pkt = 0;
 static int garble_tcp_client_enabled = 0;
 static int garble_local_obf_enabled = 0;
+static int garble_wellknown_port_obf_enabled = 0;
 static int garble_routing_enabled = 0;
 static int garble_tcp_binary_payload = 0;
 static int garble_udp_binary_payload = 0;
@@ -432,6 +433,13 @@ static struct ctl_table garble_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 	{
+		.procname	= "enable_wellknown_port_obf",
+		.data		= &garble_wellknown_port_obf_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
 		.procname	= "enable_routing",
 		.data		= &garble_routing_enabled,
 		.maxlen		= sizeof(int),
@@ -683,6 +691,11 @@ inline bool garble_check_if_tcp_client_enabled(void)
 inline bool garble_check_if_local_obf_enabled(void)
 {
 	return garble_local_obf_enabled;
+}
+
+inline bool garble_check_if_wellknown_port_obf_enabled(void)
+{
+	return garble_wellknown_port_obf_enabled;
 }
 
 inline bool garble_check_if_routing_enabled(void)

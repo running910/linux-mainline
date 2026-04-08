@@ -202,7 +202,7 @@ static inline bool check_if_well_known_udp_port(__be16 port)
 	case 1900:  // UPnP SSDP
 	case 5353:  // mDNS
 	case 5355:  // LLMNR
-	case 3478:  // STUN
+//	case 3478:  // STUN
 //		__log("well known port %d! ignore", nport);
 		return true;
 	default:
@@ -277,7 +277,7 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
 	if (!garble_check_if_local_obf_enabled() && check_local_traffic(saddr, daddr))
 		return;
 
-	if (check_if_well_known_tcp_port(dport))
+	if (!garble_check_if_wellknown_port_obf_enabled() && check_if_well_known_tcp_port(dport))
                 return;
 
         if (!generate_tcp_payload(payload, &payload_len))
@@ -305,7 +305,7 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *saddr, const struct in6_
 		return;
 	}
 
-	if (check_if_well_known_tcp_port(dport))
+	if (!garble_check_if_wellknown_port_obf_enabled() && check_if_well_known_tcp_port(dport))
                 return;
 
         if (!generate_tcp_payload(payload, &payload_len))
@@ -328,7 +328,7 @@ void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
 	if (!garble_check_if_local_obf_enabled() && check_local_traffic(saddr, daddr))
 		return;
 
-	if (check_if_well_known_udp_port(dport))
+	if (!garble_check_if_wellknown_port_obf_enabled() && check_if_well_known_udp_port(dport))
 		return;
 
 	payload_len = sizeof(payload);
@@ -355,7 +355,7 @@ void garble_insert_udp_packet_v6(const struct in6_addr *saddr, const struct in6_
 		return;
 	}
 
-	if (check_if_well_known_udp_port(dport))
+	if (!garble_check_if_wellknown_port_obf_enabled() && check_if_well_known_udp_port(dport))
                 return;
 
  	payload_len = sizeof(payload);
