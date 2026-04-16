@@ -83,7 +83,7 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
 		return build_wechat_video_call_msg(buf, out_len);
 	case UDP_OBF_SIP_INVITE:
 		return build_sip_payload(buf, out_len);
-	case UDP_OBF_DTLS:
+	case UDP_OBF_DTLS_CLIENTHELLO:
 		return build_dtls_client_hello(buf, out_len, garble_get_random_domain());
 	default:
 		return NULL;
