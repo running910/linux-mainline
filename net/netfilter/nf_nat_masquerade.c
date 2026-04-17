@@ -30,9 +30,9 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
 
 	ct = nf_ct_get(skb, &ctinfo);
 
-    log_skb(skb, "ct: %p ctinfo %d", ct, ctinfo);
+	log_skb(skb, "out->name: %s skb->dev->name: %s skb->skb_iif: %d skb->sk %p", 
+		out ? out->name : "NULL", skb->dev ? skb->dev->name : "NULL", skb->skb_iif, skb->sk);
 
-    log_skb_pref(skb, "ct: %p ctinfo %d", ct, ctinfo);
 
 	WARN_ON(!(ct && (ctinfo == IP_CT_NEW || ctinfo == IP_CT_RELATED ||
 			 ctinfo == IP_CT_RELATED_REPLY)));
@@ -63,7 +63,9 @@ nf_nat_masquerade_ipv4(struct sk_buff *skb, unsigned int hooknum,
 		log_skb(skb, "########## it is from inner network!");
 	}
 
-	if (check_if_need_nathole(ct, newsrc))
+	// 有一种情况是开负载均衡情况下，主路由表的默认网关网卡是vr_veth_host指向blackhole，从本
+	// 地产生的流量不需要nathole，会消耗expectations资源，这种情况skb->skb_iif为0，且skb->sk不为NULL
+	if (check_if_need_nathole(ct, newsrc) && skb->skb_iif && !skb->sk)
 		return do_nathole(skb, ct, range, newsrc);
 #endif
 
