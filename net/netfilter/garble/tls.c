@@ -6,7 +6,10 @@ inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, c
 	int offset = 0;
 	int hello_start;
 	int i;
+	int j;
 	int cipher_suite_len;
+	int cipher_suite_count;
+	int selected_cipher_suite_count;
 	int ext_offset;
 	int sni_len;
 	int ext_len;
@@ -30,9 +33,9 @@ inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, c
 		0xc0, 0x24,     // TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
 		0x00, 0x9d,     // TLS_RSA_WITH_AES_256_GCM_SHA384
 		0x00, 0x3d,     // TLS_RSA_WITH_AES_256_SHA256
-		0x00, 0x35,     // TLS_RSA_AES256_SHA
 		0x00, 0xff      // Extended Master Secret
 	};
+	unsigned char shuffled_cipher_suites[sizeof(cipher_suites)];
 
 	// === TLS Record Header (5 bytes) ===
 	buf[offset++] = 0x16;                 // content_type: handshake
@@ -65,10 +68,29 @@ inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, c
 	buf[offset++] = 0x00;                          // session_id (1 byte length + 0 bytes)
 
 
-	cipher_suite_len = sizeof(cipher_suites);
+	memcpy(shuffled_cipher_suites, cipher_suites, sizeof(cipher_suites));
+	cipher_suite_count = sizeof(shuffled_cipher_suites) / 2;
+	for (i = cipher_suite_count - 1; i > 0; i--) {
+		unsigned char tmp0;
+		unsigned char tmp1;
+
+		j = prandom_u32() % (i + 1);
+
+		tmp0 = shuffled_cipher_suites[2 * i];
+		tmp1 = shuffled_cipher_suites[2 * i + 1];
+		shuffled_cipher_suites[2 * i] = shuffled_cipher_suites[2 * j];
+		shuffled_cipher_suites[2 * i + 1] = shuffled_cipher_suites[2 * j + 1];
+		shuffled_cipher_suites[2 * j] = tmp0;
+		shuffled_cipher_suites[2 * j + 1] = tmp1;
+	}
+
+	/* current cipher_suite_count is fixed to 17, so choose 10..17 directly */
+	selected_cipher_suite_count = 10 + (prandom_u32() % 8);
+
+	cipher_suite_len = selected_cipher_suite_count * 2;
 	buf[offset++] = cipher_suite_len >> 8;
 	buf[offset++] = cipher_suite_len & 0xFF;
-	memcpy(buf + offset, cipher_suites, cipher_suite_len);
+	memcpy(buf + offset, shuffled_cipher_suites, cipher_suite_len);
 	offset += cipher_suite_len;
 
 	// Compression Methods
