@@ -11,6 +11,11 @@ inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, c
 	int cipher_suite_count;
 	int selected_cipher_suite_count;
 	int ext_offset;
+	int add_sni;
+	int add_padding;
+	int sni_first;
+	int session_id_len;
+	int padding_len;
 	int sni_len;
 	int ext_len;
 	int name_list_len;
@@ -65,7 +70,13 @@ inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, c
 		offset += sizeof(u32);
 	}
 	
-	buf[offset++] = 0x00;                          // session_id (1 byte length + 0 bytes)
+	/* Randomize session_id: choose 0 or 32 bytes */
+	session_id_len = (prandom_u32() & 0x1) ? 32 : 0;
+	buf[offset++] = session_id_len;
+	if (session_id_len) {
+		get_random_bytes(buf + offset, session_id_len);
+		offset += session_id_len;
+	}
 
 
 	memcpy(shuffled_cipher_suites, cipher_suites, sizeof(cipher_suites));
@@ -98,39 +109,90 @@ inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, c
 	buf[offset++] = 0x00;                 // null compression
 
 	/* Extensions are optional in ClientHello.
-	 * Only add server_name when sni is provided and non-empty.
+	 * Randomize low-risk features:
+	 * - include server_name when sni is provided
+	 * - include RFC 7685 padding extension with random length
+	 * - randomize extension order between server_name and padding
 	 */
-	if (sni && *sni) {
+	add_sni = sni && *sni;
+	add_padding = prandom_u32() & 0x1;
+	if (add_sni || add_padding) {
 		ext_offset = offset;
 		offset += 2; // extensions length placeholder
 
-		sni_len = strlen(sni);
+		sni_first = prandom_u32() & 0x1;
 
-		// Extension Type: server_name (0x0000)
-		buf[offset++] = 0x00;
-		buf[offset++] = 0x00;
+		if (add_sni && sni_first) {
+			sni_len = strlen(sni);
 
-		// Extension Data Length:
-		// = 2 (name_list_len) + 1 (name_type) + 2 (host_name_len) + sni_len
-		ext_len = 2 + 1 + 2 + sni_len;
-		buf[offset++] = (ext_len >> 8) & 0xFF;
-		buf[offset++] = ext_len & 0xFF;
+			// Extension Type: server_name (0x0000)
+			buf[offset++] = 0x00;
+			buf[offset++] = 0x00;
 
-		// ServerNameList length
-		name_list_len = 1 + 2 + sni_len;
-		buf[offset++] = (name_list_len >> 8) & 0xFF;
-		buf[offset++] = name_list_len & 0xFF;
+			// Extension Data Length:
+			// = 2 (name_list_len) + 1 (name_type) + 2 (host_name_len) + sni_len
+			ext_len = 2 + 1 + 2 + sni_len;
+			buf[offset++] = (ext_len >> 8) & 0xFF;
+			buf[offset++] = ext_len & 0xFF;
 
-		// name_type: host_name (0x00)
-		buf[offset++] = 0x00;
+			// ServerNameList length
+			name_list_len = 1 + 2 + sni_len;
+			buf[offset++] = (name_list_len >> 8) & 0xFF;
+			buf[offset++] = name_list_len & 0xFF;
 
-		// host_name_len
-		buf[offset++] = (sni_len >> 8) & 0xFF;
-		buf[offset++] = sni_len & 0xFF;
+			// name_type: host_name (0x00)
+			buf[offset++] = 0x00;
 
-		// host_name
-		memcpy(buf + offset, sni, sni_len);
-		offset += sni_len;
+			// host_name_len
+			buf[offset++] = (sni_len >> 8) & 0xFF;
+			buf[offset++] = sni_len & 0xFF;
+
+			// host_name
+			memcpy(buf + offset, sni, sni_len);
+			offset += sni_len;
+		}
+
+		if (add_padding) {
+			/* RFC 7685 padding extension (type 0x0015), length 1..32 */
+			padding_len = 1 + (prandom_u32() % 32);
+
+			buf[offset++] = 0x00;
+			buf[offset++] = 0x15;
+			buf[offset++] = (padding_len >> 8) & 0xFF;
+			buf[offset++] = padding_len & 0xFF;
+			memset(buf + offset, 0x00, padding_len);
+			offset += padding_len;
+		}
+
+		if (add_sni && !sni_first) {
+			sni_len = strlen(sni);
+
+			// Extension Type: server_name (0x0000)
+			buf[offset++] = 0x00;
+			buf[offset++] = 0x00;
+
+			// Extension Data Length:
+			// = 2 (name_list_len) + 1 (name_type) + 2 (host_name_len) + sni_len
+			ext_len = 2 + 1 + 2 + sni_len;
+			buf[offset++] = (ext_len >> 8) & 0xFF;
+			buf[offset++] = ext_len & 0xFF;
+
+			// ServerNameList length
+			name_list_len = 1 + 2 + sni_len;
+			buf[offset++] = (name_list_len >> 8) & 0xFF;
+			buf[offset++] = name_list_len & 0xFF;
+
+			// name_type: host_name (0x00)
+			buf[offset++] = 0x00;
+
+			// host_name_len
+			buf[offset++] = (sni_len >> 8) & 0xFF;
+			buf[offset++] = sni_len & 0xFF;
+
+			// host_name
+			memcpy(buf + offset, sni, sni_len);
+			offset += sni_len;
+		}
 
 		// Write total extensions length
 		ext_total_len = offset - ext_offset - 2;
