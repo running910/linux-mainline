@@ -7,6 +7,7 @@
 #include <net/ip.h>
 #include <net/tcp.h>
 #include <net/checksum.h>
+#include <linux/random.h>
 #include <linux/version.h>
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_garble.h>
@@ -138,8 +139,8 @@ struct sk_buff *generate_and_send_tcp_packet(__be32 saddr, __be32 daddr, __be16 
 	memset(tcph, 0, sizeof(struct tcphdr));
 	tcph->source = sport;
 	tcph->dest = dport;
-	tcph->seq = htonl(1);  // 随便填个非零
-	tcph->ack_seq = htonl(1);
+	tcph->seq = htonl(get_random_u32());
+	tcph->ack_seq = htonl(get_random_u32());
 	tcph->doff = tcp_hdr_len >> 2;
 	tcph->ack = 1;
 	tcph->psh = 1;
@@ -242,8 +243,8 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	memset(tcph, 0, sizeof(struct tcphdr));
 	tcph->source = sport; 
 	tcph->dest = dport;
-	tcph->seq = htonl(1);
-	tcph->ack_seq = htonl(1);
+	tcph->seq = htonl(get_random_u32());
+	tcph->ack_seq = htonl(get_random_u32());
 	tcph->doff = tcp_hdr_len >> 2;
 	tcph->ack = 1;
 	tcph->psh = 1;
