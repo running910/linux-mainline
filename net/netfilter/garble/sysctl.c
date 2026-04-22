@@ -40,6 +40,7 @@ static int garble_http_enabled = 0;
 static int garble_udp_enabled = 0;
 static int garble_tcp_aggressive = 0;
 static int garble_tcp_avg_pkt = 0;
+static int garble_tcp_repeat_pkt = 3;
 static int garble_udp_aggressive = 0;
 static int garble_udp_avg_pkt = 0;
 static int garble_tcp_client_enabled = 0;
@@ -468,6 +469,13 @@ static struct ctl_table garble_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 	{
+		.procname	= "tcp_repeat_pkt",
+		.data		= &garble_tcp_repeat_pkt,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
 		.procname	= "udp_aggr_avg_pkt",
 		.data		= &garble_udp_avg_pkt,
 		.maxlen		= sizeof(int),
@@ -681,6 +689,11 @@ inline int garble_get_udp_avg_pkt(void)
 inline int garble_get_tcp_avg_pkt(void)
 {
 	return garble_tcp_avg_pkt;
+}
+
+inline int garble_get_tcp_repeat_pkt(void)
+{
+	return garble_tcp_repeat_pkt;
 }
 
 inline bool garble_check_if_tcp_client_enabled(void)

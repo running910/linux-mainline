@@ -267,6 +267,7 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
 {
         unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
         int payload_len = sizeof(payload);
+	int i;
 
 	//__log("obvious new connection is comming saddr %x daddr %x sport %d dport %d net %x", saddr, daddr, sport, dport, net);
 
@@ -285,7 +286,8 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
         if (!generate_tcp_payload(payload, &payload_len))
                 return;
 
-	generate_and_send_tcp_packet(saddr, daddr, sport, dport, seq, ack_seq,
+	for (i = 0; i < garble_get_tcp_repeat_pkt(); i++)
+		generate_and_send_tcp_packet(saddr, daddr, sport, dport, seq, ack_seq,
 				     net, payload, payload_len);
 }
 
@@ -297,6 +299,7 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
 {
 	unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
 	int payload_len = sizeof(payload);
+	int i;
 
 	if (!saddr || !daddr || !sport || !dport || !net)
 		return;
@@ -318,7 +321,8 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
         if (!generate_tcp_payload(payload, &payload_len))
                 return;
 
-	generate_and_send_tcp_packet_v6(saddr, daddr, sport, dport, seq,
+	for (i = 0; i < garble_get_tcp_repeat_pkt(); i++)
+		generate_and_send_tcp_packet_v6(saddr, daddr, sport, dport, seq,
 					ack_seq, net, payload, payload_len);
 }
 
