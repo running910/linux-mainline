@@ -107,8 +107,8 @@ static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const s
                   //              &otuple->dst.u3.ip, ntohs(otuple->dst.u.tcp.port));
 
                 if (proto == IPPROTO_TCP) {
-                        garble_insert_tcp_packet(otuple->dst.u3.ip, otuple->src.u3.ip, otuple->dst.u.tcp.port, otuple->src.u.tcp.port, state->net);
-
+                        garble_insert_tcp_packet(otuple->dst.u3.ip, otuple->src.u3.ip, otuple->dst.u.tcp.port, otuple->src.u.tcp.port, 0, state->net);
+          
                 // must be UDP, 因为前面已经过滤掉非TCP非UDP的包了
                 } else {
                         garble_insert_udp_packet(otuple->dst.u3.ip, otuple->src.u3.ip, otuple->dst.u.tcp.port, otuple->src.u.tcp.port, state->net);
