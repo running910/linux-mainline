@@ -262,7 +262,7 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 }
 
 void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
-			      __be16 dport, u32 ack_seq,
+			      __be16 dport, u32 seq, u32 ack_seq,
 			      const struct net *net)
 {
         unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
@@ -285,13 +285,14 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
         if (!generate_tcp_payload(payload, &payload_len))
                 return;
 
-	generate_and_send_tcp_packet(saddr, daddr, sport, dport, ack_seq, net, payload, payload_len);
+	generate_and_send_tcp_packet(saddr, daddr, sport, dport, seq, ack_seq,
+				     net, payload, payload_len);
 }
 
 void garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
 				 const struct in6_addr *daddr,
 				 __be16 sport, __be16 dport,
-				 u32 ack_seq,
+				 u32 seq, u32 ack_seq,
 				 const struct net *net)
 {
 	unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
@@ -317,7 +318,8 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
         if (!generate_tcp_payload(payload, &payload_len))
                 return;
 
-	generate_and_send_tcp_packet_v6(saddr, daddr, sport, dport, ack_seq, net, payload, payload_len);
+	generate_and_send_tcp_packet_v6(saddr, daddr, sport, dport, seq,
+					ack_seq, net, payload, payload_len);
 }
 
 void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct net *net)
@@ -387,9 +389,13 @@ void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reve
 		if (tuple.protocol == IPPROTO_TCP) {
 
 			if (reverse) {
-				garble_insert_tcp_packet(tuple.daddr, tuple.saddr, tuple.dport, tuple.sport, 0, net);
+				garble_insert_tcp_packet(tuple.daddr, tuple.saddr,
+							 tuple.dport, tuple.sport,
+							 0, 0, net);
 			} else {
-				garble_insert_tcp_packet(tuple.saddr, tuple.daddr, tuple.sport, tuple.dport, 0, net);
+				garble_insert_tcp_packet(tuple.saddr, tuple.daddr,
+							 tuple.sport, tuple.dport,
+							 0, 0, net);
 			}
 		} else if (tuple.protocol == IPPROTO_UDP) {
 
@@ -408,9 +414,15 @@ void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reve
 		if (tuple6.protocol == IPPROTO_TCP) {
 
 			if (reverse)
-				garble_insert_tcp_packet_v6(&tuple6.daddr, &tuple6.saddr, tuple6.dport, tuple6.sport, 0, net);
+				garble_insert_tcp_packet_v6(&tuple6.daddr, &tuple6.saddr,
+							    tuple6.dport,
+							    tuple6.sport,
+							    0, 0, net);
 			else
-				garble_insert_tcp_packet_v6(&tuple6.saddr, &tuple6.daddr, tuple6.sport, tuple6.dport, 0, net);
+				garble_insert_tcp_packet_v6(&tuple6.saddr, &tuple6.daddr,
+							    tuple6.sport,
+							    tuple6.dport,
+							    0, 0, net);
 		} else if (tuple6.protocol == IPPROTO_UDP) {
 
 			if (reverse)				

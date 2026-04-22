@@ -105,7 +105,7 @@ garble_tuple_v6_t *extract_tuple_info_v6(struct sk_buff *skb, garble_tuple_v6_t 
 
 struct sk_buff *generate_and_send_tcp_packet(__be32 saddr, __be32 daddr,
 					     __be16 sport, __be16 dport,
-					     u32 ack_seq,
+					     u32 seq, u32 ack_seq,
 					     const struct net *net, char *payload,
 					     int payload_len)
 {
@@ -141,7 +141,7 @@ struct sk_buff *generate_and_send_tcp_packet(__be32 saddr, __be32 daddr,
 	memset(tcph, 0, sizeof(struct tcphdr));
 	tcph->source = sport;
 	tcph->dest = dport;
-	tcph->seq = htonl(get_random_u32());
+	tcph->seq = htonl(seq ? seq : get_random_u32());
 	tcph->ack_seq = htonl(ack_seq ? ack_seq : get_random_u32());
 	tcph->doff = tcp_hdr_len >> 2;
 	tcph->ack = 1;
@@ -202,7 +202,8 @@ struct sk_buff *generate_and_send_tcp_packet(__be32 saddr, __be32 daddr,
 }
 
 struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, const struct in6_addr *daddr,
-						__be16 sport, __be16 dport, u32 ack_seq,
+						__be16 sport, __be16 dport,
+						u32 seq, u32 ack_seq,
 						const struct net *net,
 						char *payload, int payload_len)
 {
@@ -246,7 +247,7 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	memset(tcph, 0, sizeof(struct tcphdr));
 	tcph->source = sport; 
 	tcph->dest = dport;
-	tcph->seq = htonl(get_random_u32());
+	tcph->seq = htonl(seq ? seq : get_random_u32());
 	tcph->ack_seq = htonl(ack_seq ? ack_seq : get_random_u32());
 	tcph->doff = tcp_hdr_len >> 2;
 	tcph->ack = 1;

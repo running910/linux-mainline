@@ -985,6 +985,7 @@ static int tcp_v4_send_synack(const struct sock *sk, struct dst_entry *dst,
 		garble_insert_tcp_packet(ireq->ir_loc_addr, 
 						ireq->ir_rmt_addr, htons(ireq->ir_num), 
 						ireq->ir_rmt_port,
+						tcp_rsk(req)->snt_isn,
 						tcp_rsk(req)->rcv_nxt,
 						sock_net(sk));
 #endif
