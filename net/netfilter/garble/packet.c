@@ -196,6 +196,7 @@ struct sk_buff *generate_and_send_tcp_packet(__be32 saddr, __be32 daddr,
 
 	//ip_local_out(net, (struct sock *)sk, skb);
 	ip_local_out((struct net *)net, NULL, skb);
+	garble_stats_account_tcp_v4(total_len);
 
 	//kfree_skb(skb);
 	return NULL;
@@ -307,6 +308,7 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 		pr_err("ip6_local_out failed: %d\n", err);
 		return NULL;
 	}
+	garble_stats_account_tcp_v6(total_len);
 
 	return NULL;
 }
@@ -408,6 +410,7 @@ struct sk_buff *generate_and_send_udp_packet(__be32 saddr, __be32 daddr, __be16 
 	//	kfree_skb(new_skb);
 		return NULL;
 	}
+	garble_stats_account_udp_v4(total_len);
 
 	return new_skb;
 }
@@ -514,6 +517,7 @@ struct sk_buff *generate_and_send_udp_packet_v6(const struct in6_addr *saddr, co
 		pr_err("ip6_local_out failed: %d\n", err);
 		return NULL;
 	}
+	garble_stats_account_udp_v6(total_len);
 
 	return NULL;
 }

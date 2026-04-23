@@ -3,6 +3,7 @@
 
 
 #include <linux/version.h>
+#include <linux/types.h>
 
 #define GARBLE_MAX_TCP_PAYLOAD (1452) // 1500 - 20 (IP) - 20 (TCP) - 8 (ppp header) 
 #define GARBLE_MAX_UDP_PAYLOAD (1464) // 1500 - 20 (IP) - 8 (UDP) - 8 (ppp header)
@@ -36,6 +37,10 @@ inline int garble_get_tcp_ttl(void);
 inline int garble_get_udp_obf_proto(void);
 inline const char *garble_get_udp_extra(void);
 inline int garble_check_if_lan_nic(const char *nic);
+inline void garble_stats_account_tcp_v4(u32 bytes);
+inline void garble_stats_account_tcp_v6(u32 bytes);
+inline void garble_stats_account_udp_v4(u32 bytes);
+inline void garble_stats_account_udp_v6(u32 bytes);
 
 #else
 extern const char *garble_get_random_domain(void);
@@ -63,6 +68,10 @@ extern int garble_get_tcp_ttl(void);
 extern int garble_get_udp_obf_proto(void);
 extern const char *garble_get_udp_extra(void);
 extern int garble_check_if_lan_nic(const char *nic);
+extern void garble_stats_account_tcp_v4(u32 bytes);
+extern void garble_stats_account_tcp_v6(u32 bytes);
+extern void garble_stats_account_udp_v4(u32 bytes);
+extern void garble_stats_account_udp_v6(u32 bytes);
 
 #endif
 

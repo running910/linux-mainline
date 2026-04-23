@@ -6,7 +6,9 @@
 #include <linux/slab.h>
 #include <linux/random.h>
 #include <linux/proc_fs.h>
+#include <linux/percpu.h>
 #include <linux/uaccess.h>
+#include <linux/u64_stats_sync.h>
 #include <linux/version.h>
 #include <linux/string.h>
 
@@ -75,6 +77,27 @@ static struct {
 	.len = 0,
 	.data = {0}
 };
+
+enum garble_stats_idx {
+	GARBLE_STAT_TCP_V4 = 0,
+	GARBLE_STAT_TCP_V6,
+	GARBLE_STAT_UDP_V4,
+	GARBLE_STAT_UDP_V6,
+	GARBLE_STAT_MAX,
+};
+
+struct garble_pcpu_stats {
+	struct u64_stats_sync syncp;
+	u64 pkts[GARBLE_STAT_MAX];
+	u64 bytes[GARBLE_STAT_MAX];
+};
+
+struct garble_stats_total {
+	u64 pkts[GARBLE_STAT_MAX];
+	u64 bytes[GARBLE_STAT_MAX];
+};
+
+static DEFINE_PER_CPU(struct garble_pcpu_stats, garble_pcpu_stats);
 
 
 static void garble_config_free(struct rcu_head *head)
@@ -550,6 +573,126 @@ static struct ctl_table_header *garble_sysctl_header;
 static struct proc_dir_entry *garble_proc_dir;
 static struct proc_dir_entry *udp_payload_proc_entry;
 static struct proc_dir_entry *tcp_payload_proc_entry;
+static struct proc_dir_entry *stats_proc_entry;
+
+static inline void garble_stats_account(enum garble_stats_idx idx, u32 bytes)
+{
+	struct garble_pcpu_stats *stats;
+
+	preempt_disable();
+	stats = this_cpu_ptr(&garble_pcpu_stats);
+	u64_stats_update_begin(&stats->syncp);
+	stats->pkts[idx]++;
+	stats->bytes[idx] += bytes;
+	u64_stats_update_end(&stats->syncp);
+	preempt_enable();
+}
+
+inline void garble_stats_account_tcp_v4(u32 bytes)
+{
+	garble_stats_account(GARBLE_STAT_TCP_V4, bytes);
+}
+
+inline void garble_stats_account_tcp_v6(u32 bytes)
+{
+	garble_stats_account(GARBLE_STAT_TCP_V6, bytes);
+}
+
+inline void garble_stats_account_udp_v4(u32 bytes)
+{
+	garble_stats_account(GARBLE_STAT_UDP_V4, bytes);
+}
+
+inline void garble_stats_account_udp_v6(u32 bytes)
+{
+	garble_stats_account(GARBLE_STAT_UDP_V6, bytes);
+}
+
+static void garble_stats_collect(struct garble_stats_total *total)
+{
+	int cpu, i;
+
+	memset(total, 0, sizeof(*total));
+
+	for_each_possible_cpu(cpu) {
+		struct garble_pcpu_stats *stats;
+		u64 pkts[GARBLE_STAT_MAX];
+		u64 bytes[GARBLE_STAT_MAX];
+		unsigned int start;
+
+		stats = per_cpu_ptr(&garble_pcpu_stats, cpu);
+		do {
+			start = u64_stats_fetch_begin_irq(&stats->syncp);
+			for (i = 0; i < GARBLE_STAT_MAX; i++) {
+				pkts[i] = stats->pkts[i];
+				bytes[i] = stats->bytes[i];
+			}
+		} while (u64_stats_fetch_retry_irq(&stats->syncp, start));
+
+		for (i = 0; i < GARBLE_STAT_MAX; i++) {
+			total->pkts[i] += pkts[i];
+			total->bytes[i] += bytes[i];
+		}
+	}
+}
+
+static ssize_t garble_stats_read(struct file *file, char __user *buf,
+				 size_t count, loff_t *ppos)
+{
+	char out[768];
+	struct garble_stats_total total;
+	u64 tcp_pkts, udp_pkts, ipv4_pkts, ipv6_pkts, all_pkts;
+	u64 tcp_bytes, udp_bytes, ipv4_bytes, ipv6_bytes, all_bytes;
+	int len;
+
+	garble_stats_collect(&total);
+
+	tcp_pkts = total.pkts[GARBLE_STAT_TCP_V4] + total.pkts[GARBLE_STAT_TCP_V6];
+	udp_pkts = total.pkts[GARBLE_STAT_UDP_V4] + total.pkts[GARBLE_STAT_UDP_V6];
+	ipv4_pkts = total.pkts[GARBLE_STAT_TCP_V4] + total.pkts[GARBLE_STAT_UDP_V4];
+	ipv6_pkts = total.pkts[GARBLE_STAT_TCP_V6] + total.pkts[GARBLE_STAT_UDP_V6];
+	all_pkts = tcp_pkts + udp_pkts;
+
+	tcp_bytes = total.bytes[GARBLE_STAT_TCP_V4] + total.bytes[GARBLE_STAT_TCP_V6];
+	udp_bytes = total.bytes[GARBLE_STAT_UDP_V4] + total.bytes[GARBLE_STAT_UDP_V6];
+	ipv4_bytes = total.bytes[GARBLE_STAT_TCP_V4] + total.bytes[GARBLE_STAT_UDP_V4];
+	ipv6_bytes = total.bytes[GARBLE_STAT_TCP_V6] + total.bytes[GARBLE_STAT_UDP_V6];
+	all_bytes = tcp_bytes + udp_bytes;
+
+	len = scnprintf(out, sizeof(out),
+		"metric        packets             bytes\n"
+		"total         %llu               %llu\n"
+		"tcp           %llu               %llu\n"
+		"udp           %llu               %llu\n"
+		"ipv4          %llu               %llu\n"
+		"ipv6          %llu               %llu\n"
+		"tcp_v4        %llu               %llu\n"
+		"tcp_v6        %llu               %llu\n"
+		"udp_v4        %llu               %llu\n"
+		"udp_v6        %llu               %llu\n",
+		all_pkts, all_bytes,
+		tcp_pkts, tcp_bytes,
+		udp_pkts, udp_bytes,
+		ipv4_pkts, ipv4_bytes,
+		ipv6_pkts, ipv6_bytes,
+		total.pkts[GARBLE_STAT_TCP_V4], total.bytes[GARBLE_STAT_TCP_V4],
+		total.pkts[GARBLE_STAT_TCP_V6], total.bytes[GARBLE_STAT_TCP_V6],
+		total.pkts[GARBLE_STAT_UDP_V4], total.bytes[GARBLE_STAT_UDP_V4],
+		total.pkts[GARBLE_STAT_UDP_V6], total.bytes[GARBLE_STAT_UDP_V6]);
+
+	return simple_read_from_buffer(buf, count, ppos, out, len);
+}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+static const struct proc_ops garble_stats_proc_ops = {
+	.proc_read	= garble_stats_read,
+};
+#else
+static const struct file_operations garble_stats_proc_ops = {
+	.owner		= THIS_MODULE,
+	.read		= garble_stats_read,
+};
+#endif
 
 int garble_sysctl_init(void)
 {
@@ -586,6 +729,16 @@ int garble_sysctl_init(void)
 		return -ENOMEM;
 	}
 
+	stats_proc_entry = proc_create("stats", 0444, garble_proc_dir,
+				      &garble_stats_proc_ops);
+	if (!stats_proc_entry) {
+		pr_err("garble: failed to create /proc/garble/stats entry\n");
+		remove_proc_entry("tcp_payload", garble_proc_dir);
+		remove_proc_entry("udp_payload", garble_proc_dir);
+		remove_proc_entry("garble", NULL);
+		return -ENOMEM;
+	}
+
 	default_lan_cfg = garble_parse_lan_nics(garble_lan_args);
 	if (!default_lan_cfg)
 		return -ENOMEM;
@@ -606,6 +759,8 @@ void garble_sysctl_exit(void)
 	unregister_sysctl_table(garble_sysctl_header);
 
 	/* Remove procfs entries */
+	if (stats_proc_entry)
+		remove_proc_entry("stats", garble_proc_dir);
 	if (tcp_payload_proc_entry)
 		remove_proc_entry("tcp_payload", garble_proc_dir);
 	if (udp_payload_proc_entry)
