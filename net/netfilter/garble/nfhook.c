@@ -12,6 +12,7 @@
 
 #include "sysctl.h"
 #include "packet.h"
+#include "hook.h"
 
 extern void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reverse);
 

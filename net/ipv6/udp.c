@@ -1232,9 +1232,10 @@ csum_partial:
 		uh->check = CSUM_MANGLED_0;
 
 send:
-#ifdef CONFIG_NF_GARBLE
+#if IS_ENABLED(CONFIG_NF_GARBLE)
 	/* actually skb->protocol is htons(ETH_P_IPV6) now */
-	garble_insert_udp_packet_aggressive(skb, ETH_P_IPV6, sock_net(sk));
+	nf_garble_insert_udp_packet_aggressive(skb, ETH_P_IPV6,
+					      sock_net(sk));
 #endif
 	err = ip6_send_skb(skb);
 	if (err) {

@@ -980,14 +980,15 @@ static int tcp_v4_send_synack(const struct sock *sk, struct dst_entry *dst,
 	if (!dst && (dst = inet_csk_route_req(sk, &fl4, req)) == NULL)
 		return -1;
 
-#ifdef CONFIG_NF_GARBLE
+#if IS_ENABLED(CONFIG_NF_GARBLE)
 	if (sk)
-		garble_insert_tcp_packet(ireq->ir_loc_addr, 
-						ireq->ir_rmt_addr, htons(ireq->ir_num), 
-						ireq->ir_rmt_port,
-						tcp_rsk(req)->snt_isn+1,
-						tcp_rsk(req)->rcv_nxt,
-						sock_net(sk));
+		nf_garble_insert_tcp_packet(ireq->ir_loc_addr,
+					   ireq->ir_rmt_addr,
+					   htons(ireq->ir_num),
+					   ireq->ir_rmt_port,
+					   tcp_rsk(req)->snt_isn+1,
+					   tcp_rsk(req)->rcv_nxt,
+					   sock_net(sk));
 #endif
 
 	skb = tcp_make_synack(sk, dst, req, foc, synack_type, syn_skb);

@@ -521,14 +521,16 @@ static int tcp_v6_send_synack(const struct sock *sk, struct dst_entry *dst,
 
 	skb = tcp_make_synack(sk, dst, req, foc, synack_type, syn_skb);
 
-#ifdef CONFIG_NF_GARBLE
+
+#if IS_ENABLED(CONFIG_NF_GARBLE)
 		if (sk)
-			garble_insert_tcp_packet_v6(&ireq->ir_v6_loc_addr, 
-							&ireq->ir_v6_rmt_addr, htons(ireq->ir_num),
-							 ireq->ir_rmt_port,
-							 tcp_rsk(req)->snt_isn+1,
-							 tcp_rsk(req)->rcv_nxt,
-							 sock_net(sk));
+			nf_garble_insert_tcp_packet_v6(&ireq->ir_v6_loc_addr,
+					   &ireq->ir_v6_rmt_addr,
+					   htons(ireq->ir_num),
+					   ireq->ir_rmt_port,
+					   tcp_rsk(req)->snt_isn+1,
+					   tcp_rsk(req)->rcv_nxt,
+					   sock_net(sk));
 #endif
 
 	if (skb) {

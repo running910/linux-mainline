@@ -1,25 +1,90 @@
 #ifndef _NF_GARBLE_H
 #define _NF_GARBLE_H
 
-extern void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
-				    __be16 dport, u32 seq, u32 ack_seq,
-				    const struct net *net);
+#include <linux/errno.h>
+#include <linux/kconfig.h>
+#include <linux/netfilter.h>
+#include <linux/skbuff.h>
+#include <linux/types.h>
 
-extern void garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
+struct nf_garble_ops {
+	void (*insert_tcp_packet)(__be32 saddr, __be32 daddr, __be16 sport,
+				  __be16 dport, u32 seq, u32 ack_seq,
+				  const struct net *net);
+	void (*insert_tcp_packet_v6)(const struct in6_addr *saddr,
+				     const struct in6_addr *daddr,
+				     __be16 sport, __be16 dport,
+				     u32 seq, u32 ack_seq,
+				     const struct net *net);
+	void (*insert_udp_packet_aggressive)(struct sk_buff *skb,
+				       __be16 protocol,
+				       struct net *net);
+	void (*insert_tcp_packet_aggressive)(struct sk_buff *skb,
+				       const struct net *net);
+	void (*insert_tcp_packet_client)(struct sk_buff *skb,
+				   const struct net *net);
+};
+
+#if IS_ENABLED(CONFIG_NETFILTER)
+int nf_garble_register_ops(const struct nf_garble_ops *ops);
+void nf_garble_unregister_ops(const struct nf_garble_ops *ops);
+
+void nf_garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
+				       __be16 dport, u32 seq, u32 ack_seq,
+				       const struct net *net);
+void nf_garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
 				       const struct in6_addr *daddr,
 				       __be16 sport, __be16 dport,
 				       u32 seq, u32 ack_seq,
 				       const struct net *net);
+void nf_garble_insert_udp_packet_aggressive(struct sk_buff *skb,
+					    __be16 protocol,
+					    struct net *net);
+void nf_garble_insert_tcp_packet_aggressive(struct sk_buff *skb,
+					    const struct net *net);
+void nf_garble_insert_tcp_packet_client(struct sk_buff *skb,
+					const struct net *net);
+#else
+static inline int nf_garble_register_ops(const struct nf_garble_ops *ops)
+{
+	return -EOPNOTSUPP;
+}
 
-extern void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct net *net);
+static inline void nf_garble_unregister_ops(const struct nf_garble_ops *ops)
+{
+}
 
-extern void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol, struct net *net);
+static inline void nf_garble_insert_tcp_packet(__be32 saddr, __be32 daddr,
+					      __be16 sport, __be16 dport,
+					      u32 seq, u32 ack_seq,
+					      const struct net *net)
+{
+}
 
-extern void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, const struct net *net);
+static inline void nf_garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
+					      const struct in6_addr *daddr,
+					      __be16 sport, __be16 dport,
+					      u32 seq, u32 ack_seq,
+					      const struct net *net)
+{
+}
 
-extern void garble_insert_tcp_packet_client(struct sk_buff *skb, const struct net *net);
+static inline void nf_garble_insert_udp_packet_aggressive(struct sk_buff *skb,
+						   __be16 protocol,
+						   struct net *net)
+{
+}
 
-const char *garble_get_nf_hook_point(enum nf_inet_hooks hook);
+static inline void nf_garble_insert_tcp_packet_aggressive(struct sk_buff *skb,
+						   const struct net *net)
+{
+}
+
+static inline void nf_garble_insert_tcp_packet_client(struct sk_buff *skb,
+					       const struct net *net)
+{
+}
+#endif
 
 static inline bool garble_check_if_conn_first_packet(struct sk_buff *skb)
 {

@@ -1691,7 +1691,7 @@ resolve_normal_ct(struct nf_conn *tmpl,
 	hash = hash_conntrack_raw(&tuple, state->net);
 	h = __nf_conntrack_find_get(state->net, zone, &tuple, hash);
 	if (!h) {
-#ifdef CONFIG_NF_GARBLE
+#if IS_ENABLED(CONFIG_NF_GARBLE)
 		garble_mark_conn_first_packet(skb);
 		//__log("########### new ct hook point: %s", garble_get_nf_hook_point(state->hook));
 #endif
