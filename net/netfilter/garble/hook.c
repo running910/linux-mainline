@@ -330,6 +330,7 @@ void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
 {
 	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
 	int payload_len;
+	int i;
 
 	if (!saddr || !daddr || !sport || !dport || !net)
 		return;
@@ -347,7 +348,8 @@ void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
 	if (!build_udp_payload(payload, &payload_len))
 		return;
 
-	generate_and_send_udp_packet(saddr, daddr, sport, dport, net, payload, payload_len);
+	for (i = 0; i < garble_get_udp_repeat_pkt(); i++)
+		generate_and_send_udp_packet(saddr, daddr, sport, dport, net, payload, payload_len);
 
 }
 EXPORT_SYMBOL(garble_insert_udp_packet);
@@ -356,6 +358,7 @@ void garble_insert_udp_packet_v6(const struct in6_addr *saddr, const struct in6_
 {
 	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
 	int payload_len = sizeof(payload);
+	int i;
 
 	if (!saddr || !daddr || !sport || !dport || !net)
 		return;
@@ -374,7 +377,8 @@ void garble_insert_udp_packet_v6(const struct in6_addr *saddr, const struct in6_
 	if (!build_udp_payload(payload, &payload_len))
 		return;
 
-	generate_and_send_udp_packet_v6(saddr, daddr, sport, dport, net, payload, payload_len);
+	for (i = 0; i < garble_get_udp_repeat_pkt(); i++)
+		generate_and_send_udp_packet_v6(saddr, daddr, sport, dport, net, payload, payload_len);
 }
 
 void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reverse)
