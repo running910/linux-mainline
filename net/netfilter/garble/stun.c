@@ -8,6 +8,7 @@
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/random.h>
+#include <linux/crc32.h>
 #include <linux/crypto.h>
 #include <crypto/hash.h>
 #include <crypto/md5.h>
@@ -15,13 +16,19 @@
 /* TURN message constants (STUN framing) */
 #define TURN_MAGIC_COOKIE 0x2112A442
 #define TURN_MSG_ALLOCATE_REQUEST 0x0003
+#define TURN_MSG_CREATE_PERMISSION_REQUEST 0x0008
+#define TURN_MSG_ALLOCATE_ERROR_RESPONSE 0x0113
 
 /* TURN attribute types */
 #define TURN_ATTR_REQUESTED_TRANSPORT 0x0019
+#define TURN_ATTR_XOR_PEER_ADDRESS 0x0012
+#define TURN_ATTR_ERROR_CODE 0x0009
+#define TURN_ATTR_SOFTWARE 0x8022
 #define TURN_ATTR_USERNAME 0x0006
 #define TURN_ATTR_REALM 0x0014
 #define TURN_ATTR_NONCE 0x0015
 #define TURN_ATTR_MESSAGE_INTEGRITY 0x0008
+#define TURN_ATTR_FINGERPRINT 0x8028
 
 /* Utility macros */
 #define ALIGN_4(len) (((len) + 3) & ~3)
@@ -413,10 +420,367 @@ int generate_turn_allocate_request_kernel(uint8_t *packet, int *max_len)
 	return 0;
 }
 
-inline unsigned char *build_turn_payload(unsigned char *buf, int *out_len)
+int generate_turn_create_permission_request_kernel(uint8_t *packet, int *max_len)
+{
+	struct stun_header *hdr;
+	uint8_t *attr_ptr;
+	int attr_len;
+	char username[32];
+	char nonce[17];
+	const char *realm;
+	int i;
+	uint8_t key[MD5_DIGEST_SIZE];
+	uint8_t hmac_buf[SHA1_DIGEST_SIZE];
+	char key_input[256];
+	int ret;
+	int username_padded_len;
+	int realm_padded_len;
+	int nonce_padded_len;
+	int total_len;
+	int msg_len;
+	struct stun_attribute *peer_attr;
+	struct stun_attribute *username_attr;
+	struct stun_attribute *realm_attr;
+	struct stun_attribute *nonce_attr;
+	struct stun_attribute *integrity_attr;
+	char password[17];
+	uint16_t peer_port;
+	uint16_t peer_port_xor;
+	u32 peer_ip;
+	u32 peer_ip_xor;
+
+	if (!md5_tfm || !hmac_sha1_tfm) {
+		pr_err("Crypto transforms not initialized\n");
+		return -EINVAL;
+	}
+
+	hdr = (struct stun_header *)packet;
+	attr_ptr = packet + sizeof(struct stun_header);
+	attr_len = 0;
+	realm = "turn.mcs.dingtalk.com";
+	username_padded_len = 0;
+	realm_padded_len = 0;
+	nonce_padded_len = 0;
+	total_len = 0;
+	msg_len = 0;
+	peer_attr = NULL;
+	username_attr = NULL;
+	realm_attr = NULL;
+	nonce_attr = NULL;
+	integrity_attr = NULL;
+
+	memset(username, 0, sizeof(username));
+	memset(nonce, 0, sizeof(nonce));
+	memset(key, 0, sizeof(key));
+	memset(hmac_buf, 0, sizeof(hmac_buf));
+	memset(key_input, 0, sizeof(key_input));
+	memset(password, 0, sizeof(password));
+
+	if (*max_len < sizeof(struct stun_header)) {
+		pr_err("Buffer too small for TURN header\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < 12; i++) {
+		get_random_bytes(&hdr->transaction_id[i], sizeof(uint8_t));
+	}
+
+	generate_random_string_kernel(username, 3);
+	username[3] = '@';
+	generate_random_string_kernel(username + 4, 8);
+	username[12] = '\0';
+
+	generate_random_string_kernel(password, 16);
+	password[16] = '\0';
+
+	generate_random_string_kernel(nonce, 16);
+	nonce[16] = '\0';
+
+	hdr->msg_type = htons(TURN_MSG_CREATE_PERMISSION_REQUEST);
+	hdr->magic_cookie = htonl(TURN_MAGIC_COOKIE);
+	hdr->msg_length = 0;
+
+	if (attr_ptr + sizeof(struct stun_attribute) + 8 > packet + *max_len) {
+		pr_err("Buffer overflow in xor-peer-address attribute\n");
+		return -ENOSPC;
+	}
+
+	get_random_bytes(&peer_port, sizeof(peer_port));
+	peer_port = 1024 + (peer_port % 64511);
+	get_random_bytes(&peer_ip, sizeof(peer_ip));
+
+	peer_port_xor = htons(peer_port) ^ htons((TURN_MAGIC_COOKIE >> 16) & 0xFFFF);
+	peer_ip_xor = peer_ip ^ htonl(TURN_MAGIC_COOKIE);
+
+	peer_attr = (struct stun_attribute *)attr_ptr;
+	peer_attr->type = htons(TURN_ATTR_XOR_PEER_ADDRESS);
+	peer_attr->length = htons(8);
+	peer_attr->value[0] = 0x00;
+	peer_attr->value[1] = 0x01;
+	memcpy(peer_attr->value + 2, &peer_port_xor, sizeof(peer_port_xor));
+	memcpy(peer_attr->value + 4, &peer_ip_xor, sizeof(peer_ip_xor));
+	attr_ptr += sizeof(struct stun_attribute) + 8;
+	attr_len += sizeof(struct stun_attribute) + 8;
+
+	username_padded_len = ALIGN_4(strlen(username));
+	if (attr_ptr + sizeof(struct stun_attribute) + username_padded_len > packet + *max_len) {
+		pr_err("Buffer overflow in username attribute\n");
+		return -ENOSPC;
+	}
+
+	username_attr = (struct stun_attribute *)attr_ptr;
+	username_attr->type = htons(TURN_ATTR_USERNAME);
+	username_attr->length = htons(strlen(username));
+	memcpy(username_attr->value, username, strlen(username));
+	memset(username_attr->value + strlen(username), 0, username_padded_len - strlen(username));
+	attr_ptr += sizeof(struct stun_attribute) + username_padded_len;
+	attr_len += sizeof(struct stun_attribute) + username_padded_len;
+
+	realm_padded_len = ALIGN_4(strlen(realm));
+	if (attr_ptr + sizeof(struct stun_attribute) + realm_padded_len > packet + *max_len) {
+		pr_err("Buffer overflow in realm attribute\n");
+		return -ENOSPC;
+	}
+
+	realm_attr = (struct stun_attribute *)attr_ptr;
+	realm_attr->type = htons(TURN_ATTR_REALM);
+	realm_attr->length = htons(strlen(realm));
+	memcpy(realm_attr->value, realm, strlen(realm));
+	memset(realm_attr->value + strlen(realm), 0, realm_padded_len - strlen(realm));
+	attr_ptr += sizeof(struct stun_attribute) + realm_padded_len;
+	attr_len += sizeof(struct stun_attribute) + realm_padded_len;
+
+	nonce_padded_len = ALIGN_4(strlen(nonce));
+	if (attr_ptr + sizeof(struct stun_attribute) + nonce_padded_len > packet + *max_len) {
+		pr_err("Buffer overflow in nonce attribute\n");
+		return -ENOSPC;
+	}
+
+	nonce_attr = (struct stun_attribute *)attr_ptr;
+	nonce_attr->type = htons(TURN_ATTR_NONCE);
+	nonce_attr->length = htons(strlen(nonce));
+	memcpy(nonce_attr->value, nonce, strlen(nonce));
+	memset(nonce_attr->value + strlen(nonce), 0, nonce_padded_len - strlen(nonce));
+	attr_ptr += sizeof(struct stun_attribute) + nonce_padded_len;
+	attr_len += sizeof(struct stun_attribute) + nonce_padded_len;
+
+	hdr->msg_length = htons(attr_len);
+	msg_len = sizeof(struct stun_header) + attr_len;
+
+	snprintf(key_input, sizeof(key_input), "%s:%s:%s", username, realm, password);
+	ret = calculate_md5_kernel((const uint8_t *)key_input, strlen(key_input), key);
+	if (ret) {
+		pr_err("Failed to calculate MD5 hash\n");
+		return ret;
+	}
+
+	ret = calculate_hmac_sha1_kernel(key, MD5_DIGEST_SIZE,
+					 (const uint8_t *)packet, msg_len,
+					 hmac_buf);
+	if (ret) {
+		pr_err("Failed to calculate HMAC-SHA1\n");
+		return ret;
+	}
+
+	if (attr_ptr + sizeof(struct stun_attribute) + SHA1_DIGEST_SIZE > packet + *max_len) {
+		pr_err("Buffer overflow in integrity attribute\n");
+		return -ENOSPC;
+	}
+
+	integrity_attr = (struct stun_attribute *)attr_ptr;
+	integrity_attr->type = htons(TURN_ATTR_MESSAGE_INTEGRITY);
+	integrity_attr->length = htons(SHA1_DIGEST_SIZE);
+	memcpy(integrity_attr->value, hmac_buf, SHA1_DIGEST_SIZE);
+	attr_ptr += sizeof(struct stun_attribute) + SHA1_DIGEST_SIZE;
+	attr_len += sizeof(struct stun_attribute) + SHA1_DIGEST_SIZE;
+
+	hdr->msg_length = htons(attr_len);
+	total_len = sizeof(struct stun_header) + attr_len;
+	if (total_len > *max_len) {
+		pr_err("Generated packet exceeds buffer size: %d > %d\n", total_len, *max_len);
+		return -ENOSPC;
+	}
+
+	*max_len = total_len;
+	return 0;
+}
+
+int generate_turn_allocate_error_response_kernel(uint8_t *packet, int *max_len)
+{
+	struct stun_header *hdr;
+	uint8_t *attr_ptr;
+	int attr_len;
+	const char *realm;
+	const char *reason;
+	const char *software;
+	char nonce[17];
+	int i;
+	int realm_padded_len;
+	int nonce_padded_len;
+	int reason_padded_len;
+	int software_padded_len;
+	int total_len;
+	int fp_covered_len;
+	u32 crc;
+	u32 fingerprint;
+	struct stun_attribute *err_attr;
+	struct stun_attribute *realm_attr;
+	struct stun_attribute *nonce_attr;
+	struct stun_attribute *software_attr;
+	struct stun_attribute *fingerprint_attr;
+
+	hdr = (struct stun_header *)packet;
+	attr_ptr = packet + sizeof(struct stun_header);
+	attr_len = 0;
+	realm = "turn.mcs.dingtalk.com";
+	reason = "Unauthorized";
+	software = "Coturn-4.5.1.2 'dan Eider'";
+	realm_padded_len = 0;
+	nonce_padded_len = 0;
+	reason_padded_len = 0;
+	software_padded_len = 0;
+	total_len = 0;
+	fp_covered_len = 0;
+	crc = 0;
+	fingerprint = 0;
+	err_attr = NULL;
+	realm_attr = NULL;
+	nonce_attr = NULL;
+	software_attr = NULL;
+	fingerprint_attr = NULL;
+
+	memset(nonce, 0, sizeof(nonce));
+
+	if (*max_len < sizeof(struct stun_header)) {
+		pr_err("Buffer too small for TURN header\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < 12; i++) {
+		get_random_bytes(&hdr->transaction_id[i], sizeof(uint8_t));
+	}
+
+	generate_random_string_kernel(nonce, 16);
+	nonce[16] = '\0';
+
+	hdr->msg_type = htons(TURN_MSG_ALLOCATE_ERROR_RESPONSE);
+	hdr->magic_cookie = htonl(TURN_MAGIC_COOKIE);
+	hdr->msg_length = 0;
+
+	reason_padded_len = ALIGN_4(4 + strlen(reason));
+	if (attr_ptr + sizeof(struct stun_attribute) + reason_padded_len > packet + *max_len) {
+		pr_err("Buffer overflow in error-code attribute\n");
+		return -ENOSPC;
+	}
+
+	err_attr = (struct stun_attribute *)attr_ptr;
+	err_attr->type = htons(TURN_ATTR_ERROR_CODE);
+	err_attr->length = htons(4 + strlen(reason));
+	err_attr->value[0] = 0x00;
+	err_attr->value[1] = 0x00;
+	err_attr->value[2] = 0x04;
+	err_attr->value[3] = 0x01;
+	memcpy(err_attr->value + 4, reason, strlen(reason));
+	memset(err_attr->value + 4 + strlen(reason), 0,
+	       reason_padded_len - (4 + strlen(reason)));
+	attr_ptr += sizeof(struct stun_attribute) + reason_padded_len;
+	attr_len += sizeof(struct stun_attribute) + reason_padded_len;
+
+	realm_padded_len = ALIGN_4(strlen(realm));
+	if (attr_ptr + sizeof(struct stun_attribute) + realm_padded_len > packet + *max_len) {
+		pr_err("Buffer overflow in realm attribute\n");
+		return -ENOSPC;
+	}
+
+	realm_attr = (struct stun_attribute *)attr_ptr;
+	realm_attr->type = htons(TURN_ATTR_REALM);
+	realm_attr->length = htons(strlen(realm));
+	memcpy(realm_attr->value, realm, strlen(realm));
+	memset(realm_attr->value + strlen(realm), 0, realm_padded_len - strlen(realm));
+	attr_ptr += sizeof(struct stun_attribute) + realm_padded_len;
+	attr_len += sizeof(struct stun_attribute) + realm_padded_len;
+
+	nonce_padded_len = ALIGN_4(strlen(nonce));
+	if (attr_ptr + sizeof(struct stun_attribute) + nonce_padded_len > packet + *max_len) {
+		pr_err("Buffer overflow in nonce attribute\n");
+		return -ENOSPC;
+	}
+
+	nonce_attr = (struct stun_attribute *)attr_ptr;
+	nonce_attr->type = htons(TURN_ATTR_NONCE);
+	nonce_attr->length = htons(strlen(nonce));
+	memcpy(nonce_attr->value, nonce, strlen(nonce));
+	memset(nonce_attr->value + strlen(nonce), 0, nonce_padded_len - strlen(nonce));
+	attr_ptr += sizeof(struct stun_attribute) + nonce_padded_len;
+	attr_len += sizeof(struct stun_attribute) + nonce_padded_len;
+
+	software_padded_len = ALIGN_4(strlen(software));
+	if (attr_ptr + sizeof(struct stun_attribute) + software_padded_len > packet + *max_len) {
+		pr_err("Buffer overflow in software attribute\n");
+		return -ENOSPC;
+	}
+
+	software_attr = (struct stun_attribute *)attr_ptr;
+	software_attr->type = htons(TURN_ATTR_SOFTWARE);
+	software_attr->length = htons(strlen(software));
+	memcpy(software_attr->value, software, strlen(software));
+	memset(software_attr->value + strlen(software), 0,
+	       software_padded_len - strlen(software));
+	attr_ptr += sizeof(struct stun_attribute) + software_padded_len;
+	attr_len += sizeof(struct stun_attribute) + software_padded_len;
+
+	if (attr_ptr + sizeof(struct stun_attribute) + sizeof(u32) > packet + *max_len) {
+		pr_err("Buffer overflow in fingerprint attribute\n");
+		return -ENOSPC;
+	}
+
+	fingerprint_attr = (struct stun_attribute *)attr_ptr;
+	fingerprint_attr->type = htons(TURN_ATTR_FINGERPRINT);
+	fingerprint_attr->length = htons(sizeof(u32));
+	memset(fingerprint_attr->value, 0, sizeof(u32));
+	attr_ptr += sizeof(struct stun_attribute) + sizeof(u32);
+	attr_len += sizeof(struct stun_attribute) + sizeof(u32);
+
+	hdr->msg_length = htons(attr_len);
+	total_len = sizeof(struct stun_header) + attr_len;
+	if (total_len > *max_len) {
+		pr_err("Generated packet exceeds buffer size: %d > %d\n", total_len, *max_len);
+		return -ENOSPC;
+	}
+
+	fp_covered_len = total_len - (sizeof(struct stun_attribute) + sizeof(u32));
+	crc = crc32_le(~0, packet, fp_covered_len);
+	crc = ~crc;
+	fingerprint = crc ^ 0x5354554e;
+	fingerprint = htonl(fingerprint);
+	memcpy(fingerprint_attr->value, &fingerprint, sizeof(fingerprint));
+
+	*max_len = total_len;
+	return 0;
+}
+
+inline unsigned char *build_turn_allocate_payload(unsigned char *buf, int *out_len)
 {
 
 	if (generate_turn_allocate_request_kernel(buf, out_len) == 0) {
+		return buf;
+	} else {
+		return NULL;
+	}
+}
+
+inline unsigned char *build_turn_create_permission_payload(unsigned char *buf, int *out_len)
+{
+	if (generate_turn_create_permission_request_kernel(buf, out_len) == 0) {
+		return buf;
+	} else {
+		return NULL;
+	}
+}
+
+inline unsigned char *build_turn_allocate_error_response_payload(unsigned char *buf, int *out_len)
+{
+	if (generate_turn_allocate_error_response_kernel(buf, out_len) == 0) {
 		return buf;
 	} else {
 		return NULL;

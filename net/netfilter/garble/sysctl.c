@@ -53,7 +53,7 @@ static int garble_routing_enabled = 0;
 static int garble_tcp_binary_payload = 0;
 static int garble_udp_binary_payload = 0;
 static int garble_udp_ttl = 3;                          // Default TTL value for UDP packets
-static int garble_udp_obf_proto = 0;                    // UDP obfuscation proto: 0=turn allocate request, 1=wechat live video, 2=sip invite, 3=dtls client hello
+static int garble_udp_obf_proto = 0;                    // UDP obfuscation proto: 0=turn allocate request, 1=wechat live video, 2=sip invite, 3=dtls client hello, 4=turn create permission, 5=turn allocate error response
 static int garble_tcp_ttl = 3;                          // Default TTL value for TCP packets
 static char garble_udp_extra[UDP_EXTRA_BUF_LEN] ={0};   // UDP extra configuration string
 

@@ -78,7 +78,11 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
 
 	switch (garble_get_udp_obf_proto()) {
 	case UDP_OBF_TURN_ALLOCATE:
-		return build_turn_payload(buf, out_len);
+		return build_turn_allocate_payload(buf, out_len);
+	case UDP_OBF_TURN_CREATE_PERMISSION:
+		return build_turn_create_permission_payload(buf, out_len);
+	case UDP_OBF_TURN_ALLOCATE_ERROR_RESPONSE:
+		return build_turn_allocate_error_response_payload(buf, out_len);
 	case UDP_OBF_WECHAT_VIDEO:
 		return build_wechat_video_call_msg(buf, out_len);
 	case UDP_OBF_SIP_INVITE:
