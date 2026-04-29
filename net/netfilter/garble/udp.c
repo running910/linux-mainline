@@ -56,6 +56,36 @@ inline unsigned char *build_wechat_video_call_msg(unsigned char *buf, int *out_l
 	return buf;
 }
 
+inline unsigned char *build_tftp_rrq_payload(unsigned char *buf, int *out_len)
+{
+	static const char mode[] = "octet";
+	static const char fname_chars[] = "abcdefghijklmnopqrstuvwxyz0123456789";
+	unsigned char *ptr = buf;
+	u32 rand_val;
+	int filename_len;
+	int i;
+
+	ptr[0] = 0x00;
+	ptr[1] = 0x01;
+	ptr += 2;
+
+	get_random_bytes(&rand_val, sizeof(rand_val));
+	filename_len = 4 + (rand_val % 9);
+
+	for (i = 0; i < filename_len; i++) {
+		get_random_bytes(&rand_val, sizeof(rand_val));
+		ptr[i] = fname_chars[rand_val % (sizeof(fname_chars) - 1)];
+	}
+	ptr += filename_len;
+
+	*ptr++ = 0x00;
+	memcpy(ptr, mode, sizeof(mode));
+	ptr += sizeof(mode);
+
+	*out_len = ptr - buf;
+	return buf;
+}
+
 inline unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len)
 {
 	int len;
@@ -85,6 +115,8 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
 		return build_turn_allocate_error_response_payload(buf, out_len);
 	case UDP_OBF_TURN_CHANNEL_BIND:
 		return build_turn_channel_bind_payload(buf, out_len);
+	case UDP_OBF_TFTP_RRQ:
+		return build_tftp_rrq_payload(buf, out_len);
 	case UDP_OBF_WECHAT_VIDEO:
 		return build_wechat_video_call_msg(buf, out_len);
 	case UDP_OBF_SIP_INVITE:
