@@ -78,7 +78,7 @@ extern void garble_stats_account_udp_v6(u32 bytes);
 #endif
 
 enum udp_obf_proto {
-	UDP_OBF_STUN_REQUEST = 0,
+	UDP_OBF_TURN_ALLOCATE = 0,
 	UDP_OBF_WECHAT_VIDEO = 1,
 	UDP_OBF_SIP_INVITE = 2,
 	UDP_OBF_DTLS_CLIENTHELLO = 3,

@@ -1,6 +1,6 @@
 /*
- * STUN Allocate Request packet generator - Kernel version
- * Generate STUN payload only, no IP/UDP headers
+ * TURN Allocate Request packet generator - Kernel version
+ * Generate TURN payload (encoded in STUN framing), no IP/UDP headers
  * Pre-allocated crypto transforms for interrupt context safety
  */
 
@@ -12,16 +12,16 @@
 #include <crypto/hash.h>
 #include <crypto/md5.h>
 
-/* STUN constants */
-#define STUN_MAGIC_COOKIE 0x2112A442
-#define STUN_MSG_ALLOCATE_REQUEST 0x0003
+/* TURN message constants (STUN framing) */
+#define TURN_MAGIC_COOKIE 0x2112A442
+#define TURN_MSG_ALLOCATE_REQUEST 0x0003
 
-/* STUN attribute types */
-#define STUN_ATTR_REQUESTED_TRANSPORT 0x0019
-#define STUN_ATTR_USERNAME 0x0006
-#define STUN_ATTR_REALM 0x0014
-#define STUN_ATTR_NONCE 0x0015
-#define STUN_ATTR_MESSAGE_INTEGRITY 0x0008
+/* TURN attribute types */
+#define TURN_ATTR_REQUESTED_TRANSPORT 0x0019
+#define TURN_ATTR_USERNAME 0x0006
+#define TURN_ATTR_REALM 0x0014
+#define TURN_ATTR_NONCE 0x0015
+#define TURN_ATTR_MESSAGE_INTEGRITY 0x0008
 
 /* Utility macros */
 #define ALIGN_4(len) (((len) + 3) & ~3)
@@ -35,7 +35,7 @@
 static struct crypto_shash *md5_tfm = NULL;
 static struct crypto_shash *hmac_sha1_tfm = NULL;
 
-/* STUN data structures */
+/* TURN data structures (STUN framing) */
 struct stun_attribute {
 	uint16_t type;
 	uint16_t length;
@@ -64,7 +64,7 @@ void stun_crypto_cleanup(void)
 		hmac_sha1_tfm = NULL;
 	}
 
-	pr_info("STUN crypto transforms cleaned up\n");
+	pr_info("TURN crypto transforms cleaned up\n");
 }
 
 /*
@@ -91,7 +91,7 @@ int stun_crypto_init(void)
 		goto error;
 	}
 
-	pr_info("STUN crypto transforms initialized successfully\n");
+	pr_info("TURN crypto transforms initialized successfully\n");
 	return 0;
 
 error:
@@ -206,15 +206,15 @@ static int calculate_hmac_sha1_kernel(const uint8_t *key, size_t key_len,
 }
 
 /*
- * Generate STUN allocate request packet - kernel version
+ * Generate TURN allocate request packet - kernel version
  * Uses pre-allocated crypto transforms for interrupt context safety
  * 
- * @packet: Output buffer for STUN packet
+ * @packet: Output buffer for TURN packet
  * @max_len: Input maximum length of output buffer, output actual packet length
  * 
  * Returns: 0 on success, negative error code on failure
  */
-int generate_stun_allocate_request_kernel(uint8_t *packet, int *max_len)
+int generate_turn_allocate_request_kernel(uint8_t *packet, int *max_len)
 {
 	struct stun_header *hdr;
 	uint8_t *attr_ptr;
@@ -270,7 +270,7 @@ int generate_stun_allocate_request_kernel(uint8_t *packet, int *max_len)
 
 	/* Check buffer size */
 	if (*max_len < sizeof(struct stun_header)) {
-		pr_err("Buffer too small for STUN header\n");
+		pr_err("Buffer too small for TURN header\n");
 		return -EINVAL;
 	}
 
@@ -293,9 +293,9 @@ int generate_stun_allocate_request_kernel(uint8_t *packet, int *max_len)
 	generate_random_string_kernel(nonce, 16);
 	nonce[16] = '\0';
 
-	/* Build STUN header */
-	hdr->msg_type = htons(STUN_MSG_ALLOCATE_REQUEST);
-	hdr->magic_cookie = htonl(STUN_MAGIC_COOKIE);
+	/* Build TURN header */
+	hdr->msg_type = htons(TURN_MSG_ALLOCATE_REQUEST);
+	hdr->magic_cookie = htonl(TURN_MAGIC_COOKIE);
 	hdr->msg_length = 0; /* Will be set later */
 
 	/* 1. REQUESTED-TRANSPORT attribute */
@@ -305,7 +305,7 @@ int generate_stun_allocate_request_kernel(uint8_t *packet, int *max_len)
 	}
 	
 	transport_attr = (struct stun_attribute *)attr_ptr;
-	transport_attr->type = htons(STUN_ATTR_REQUESTED_TRANSPORT);
+	transport_attr->type = htons(TURN_ATTR_REQUESTED_TRANSPORT);
 	transport_attr->length = htons(4);
 	transport_attr->value[0] = 0x11; /* UDP protocol */
 	transport_attr->value[1] = 0x00;
@@ -322,7 +322,7 @@ int generate_stun_allocate_request_kernel(uint8_t *packet, int *max_len)
 	}
 	
 	username_attr = (struct stun_attribute *)attr_ptr;
-	username_attr->type = htons(STUN_ATTR_USERNAME);
+	username_attr->type = htons(TURN_ATTR_USERNAME);
 	username_attr->length = htons(strlen(username));
 	memcpy(username_attr->value, username, strlen(username));
 	memset(username_attr->value + strlen(username), 0, username_padded_len - strlen(username));
@@ -337,7 +337,7 @@ int generate_stun_allocate_request_kernel(uint8_t *packet, int *max_len)
 	}
 	
 	realm_attr = (struct stun_attribute *)attr_ptr;
-	realm_attr->type = htons(STUN_ATTR_REALM);
+	realm_attr->type = htons(TURN_ATTR_REALM);
 	realm_attr->length = htons(strlen(realm));
 	memcpy(realm_attr->value, realm, strlen(realm));
 	memset(realm_attr->value + strlen(realm), 0, realm_padded_len - strlen(realm));
@@ -352,7 +352,7 @@ int generate_stun_allocate_request_kernel(uint8_t *packet, int *max_len)
 	}
 	
 	nonce_attr = (struct stun_attribute *)attr_ptr;
-	nonce_attr->type = htons(STUN_ATTR_NONCE);
+	nonce_attr->type = htons(TURN_ATTR_NONCE);
 	nonce_attr->length = htons(strlen(nonce));
 	memcpy(nonce_attr->value, nonce, strlen(nonce));
 	memset(nonce_attr->value + strlen(nonce), 0, nonce_padded_len - strlen(nonce));
@@ -390,7 +390,7 @@ int generate_stun_allocate_request_kernel(uint8_t *packet, int *max_len)
 
 	/* Add MESSAGE-INTEGRITY attribute */
 	integrity_attr = (struct stun_attribute *)attr_ptr;
-	integrity_attr->type = htons(STUN_ATTR_MESSAGE_INTEGRITY);
+	integrity_attr->type = htons(TURN_ATTR_MESSAGE_INTEGRITY);
 	integrity_attr->length = htons(SHA1_DIGEST_SIZE);
 	memcpy(integrity_attr->value, hmac_buf, SHA1_DIGEST_SIZE);
 	attr_ptr += sizeof(struct stun_attribute) + SHA1_DIGEST_SIZE;
@@ -413,10 +413,10 @@ int generate_stun_allocate_request_kernel(uint8_t *packet, int *max_len)
 	return 0;
 }
 
-inline unsigned char *build_stun_payload(unsigned char *buf, int *out_len)
+inline unsigned char *build_turn_payload(unsigned char *buf, int *out_len)
 {
 
-	if (generate_stun_allocate_request_kernel(buf, out_len) == 0) {
+	if (generate_turn_allocate_request_kernel(buf, out_len) == 0) {
 		return buf;
 	} else {
 		return NULL;
