@@ -87,6 +87,16 @@ inline unsigned char *build_tftp_rrq_payload(unsigned char *buf, int *out_len)
 	return buf;
 }
 
+inline unsigned char *build_xiaomi_camera_handshake(unsigned char *buf, int *out_len)
+{
+	static const unsigned char handshake[] = { 0xf1, 0xe1, 0x00, 0x00 };
+
+	memcpy(buf, handshake, sizeof(handshake));
+	*out_len = sizeof(handshake);
+
+	return buf;
+}
+
 static inline u32 garble_rand_u32(void)
 {
 	u32 val;
@@ -240,6 +250,8 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
 		return build_tftp_rrq_payload(buf, out_len);
 	case UDP_OBF_WECHAT_VIDEO_NEW:
 		return build_wechat_video_new_payload(buf, out_len);
+	case UDP_OBF_XIAOMI_CAMERA:
+		return build_xiaomi_camera_handshake(buf, out_len);
 	case UDP_OBF_WECHAT_VIDEO:
 		return build_wechat_video_call_msg(buf, out_len);
 	case UDP_OBF_SIP_INVITE:
