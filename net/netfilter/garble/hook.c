@@ -8,6 +8,8 @@
 #include <net/tcp.h>
 #include <net/checksum.h>
 #include <linux/version.h>
+#include <linux/random.h>
+#include <linux/kernel.h>
 
 
 #include "sysctl.h"
@@ -229,40 +231,189 @@ inline unsigned char *build_tcp_payload_from_binary(unsigned char *buf, int *out
 	return buf;
 }
 
-static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_len)
+static inline unsigned char *garble_tcp_put_be16(unsigned char *ptr, u16 val)
 {
-        int mode;
+	*ptr++ = val >> 8;
+	*ptr++ = val;
+	return ptr;
+}
+
+static inline unsigned char *garble_tcp_put_be32(unsigned char *ptr, u32 val)
+{
+	*ptr++ = val >> 24;
+	*ptr++ = val >> 16;
+	*ptr++ = val >> 8;
+	*ptr++ = val;
+	return ptr;
+}
+
+static inline char garble_rand_alnum(void)
+{
+	static const char chars[] =
+		"abcdefghijklmnopqrstuvwxyz"
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		"0123456789";
+
+	return chars[prandom_u32() % (sizeof(chars) - 1)];
+}
+
+static inline unsigned char *build_ssh_banner_payload(unsigned char *buf,
+						      int *out_len)
+{
+	static const char *versions[] = {
+		"OpenSSH_8.9p1 Ubuntu-3",
+		"OpenSSH_9.3",
+		"dropbear_2022.82",
+	};
+	int len;
+
+	len = snprintf((char *)buf, *out_len, "SSH-2.0-%s\r\n",
+		       versions[prandom_u32() % ARRAY_SIZE(versions)]);
+	if (len < 0 || len >= *out_len)
+		return NULL;
+
+	*out_len = len;
+	return buf;
+}
+
+static inline unsigned char *build_rtmp_handshake_payload(unsigned char *buf,
+							  int *out_len)
+{
+	int len = min_t(int, *out_len, GARBLE_MAX_TCP_PAYLOAD);
+
+	if (len < 9)
+		return NULL;
+
+	buf[0] = 0x03;
+	garble_tcp_put_be32(buf + 1, prandom_u32());
+	memset(buf + 5, 0, 4);
+	get_random_bytes(buf + 9, len - 9);
+
+	*out_len = len;
+	return buf;
+}
+
+static inline unsigned char *build_mqtt_connect_payload(unsigned char *buf,
+							int *out_len)
+{
+	unsigned char *ptr = buf;
+	char client_id[18];
+	int i;
+	int client_id_len;
+	int remaining_len;
+
+	memcpy(client_id, "garble-", 7);
+	for (i = 7; i < sizeof(client_id) - 1; i++)
+		client_id[i] = garble_rand_alnum();
+	client_id[sizeof(client_id) - 1] = '\0';
+	client_id_len = strlen(client_id);
+	remaining_len = 10 + 2 + client_id_len;
+
+	if (*out_len < remaining_len + 2)
+		return NULL;
+
+	*ptr++ = 0x10;
+	*ptr++ = remaining_len;
+	*ptr++ = 0x00;
+	*ptr++ = 0x04;
+	memcpy(ptr, "MQTT", 4);
+	ptr += 4;
+	*ptr++ = 0x04;
+	*ptr++ = 0x02;
+	ptr = garble_tcp_put_be16(ptr, 60 + (prandom_u32() % 300));
+	ptr = garble_tcp_put_be16(ptr, client_id_len);
+	memcpy(ptr, client_id, client_id_len);
+	ptr += client_id_len;
+
+	*out_len = ptr - buf;
+	return buf;
+}
+
+static inline unsigned char *build_postgres_startup_payload(unsigned char *buf,
+							    int *out_len)
+{
+	static const char *users[] = { "postgres", "app", "admin" };
+	static const char *dbs[] = { "postgres", "live", "app" };
+	unsigned char *ptr = buf + 8;
+	const char *user = users[prandom_u32() % ARRAY_SIZE(users)];
+	const char *db = dbs[prandom_u32() % ARRAY_SIZE(dbs)];
+	int len;
+
+	if (*out_len < 96)
+		return NULL;
+
+	memcpy(ptr, "user", 5);
+	ptr += 5;
+	memcpy(ptr, user, strlen(user) + 1);
+	ptr += strlen(user) + 1;
+	memcpy(ptr, "database", 9);
+	ptr += 9;
+	memcpy(ptr, db, strlen(db) + 1);
+	ptr += strlen(db) + 1;
+	memcpy(ptr, "application_name", 17);
+	ptr += 17;
+	memcpy(ptr, "psql", 5);
+	ptr += 5;
+	*ptr++ = '\0';
+
+	len = ptr - buf;
+	garble_tcp_put_be32(buf, len);
+	garble_tcp_put_be32(buf + 4, 0x00030000);
+
+	*out_len = len;
+	return buf;
+}
+
+static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_len,
+						  garble_tuple_t *tuple,
+						  garble_tuple_v6_t *tuple6)
+{
+        int proto;
         const char *domain = NULL;
 
 	if (garble_check_if_tcp_binary_enabled()) {
 		return build_tcp_payload_from_binary(buf, out_len);
         }
 
-        if (garble_check_if_tcp_double_enabled()) {
-                mode = prandom_u32() % 2;
-        } else if (garble_check_if_tls_enabled()) {
-                mode = 1;
-        } else if (garble_check_if_http_enabled()) {
-                mode = 0;
+	(void)tuple;
+	(void)tuple6;
 
+        if (garble_check_if_tcp_double_enabled()) {
+                proto = (prandom_u32() % 2) ? TCP_OBF_TLS_CLIENTHELLO : TCP_OBF_HTTP;
+        } else if (garble_check_if_tls_enabled()) {
+                proto = TCP_OBF_TLS_CLIENTHELLO;
+        } else if (garble_check_if_http_enabled()) {
+                proto = TCP_OBF_HTTP;
+	} else if (garble_check_if_tcp_obf_enabled()) {
+                proto = garble_get_tcp_obf_proto();
+        
         // this is impossible
         } else {
                 return NULL;
         }
 
-        domain = garble_get_random_domain();
-        if (!domain)
-                return NULL;
-
-        if (mode) {
-                if (!build_tls_client_hello(buf, out_len, domain))
-                        return NULL;
-        } else {
-                if (!build_http_request(buf, out_len, domain))
-                        return NULL;
-        }
-
-        return buf;
+	switch (proto) {
+	case TCP_OBF_HTTP:
+		domain = garble_get_random_domain();
+		if (!domain)
+			return NULL;
+		return build_http_request(buf, out_len, domain);
+	case TCP_OBF_TLS_CLIENTHELLO:
+		domain = garble_get_random_domain();
+		if (!domain)
+			return NULL;
+		return build_tls_client_hello(buf, out_len, domain);
+	case TCP_OBF_SSH_BANNER:
+		return build_ssh_banner_payload(buf, out_len);
+	case TCP_OBF_RTMP_HANDSHAKE:
+		return build_rtmp_handshake_payload(buf, out_len);
+	case TCP_OBF_POSTGRES_STARTUP:
+		return build_postgres_startup_payload(buf, out_len);
+	case TCP_OBF_MQTT_CONNECT:
+		return build_mqtt_connect_payload(buf, out_len);
+	default:
+		return NULL;
+	}
 }
 
 void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
@@ -270,6 +421,7 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
 			      const struct net *net)
 {
         unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
+	garble_tuple_t tuple;
         int payload_len = sizeof(payload);
 	int i;
 
@@ -287,7 +439,13 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
 	if (!garble_check_if_wellknown_port_obf_enabled() && check_if_well_known_tcp_port(dport))
                 return;
 
-        if (!generate_tcp_payload(payload, &payload_len))
+	tuple.saddr = saddr;
+	tuple.daddr = daddr;
+	tuple.sport = sport;
+	tuple.dport = dport;
+	tuple.protocol = IPPROTO_TCP;
+
+        if (!generate_tcp_payload(payload, &payload_len, &tuple, NULL))
                 return;
 
 	for (i = 0; i < garble_get_tcp_repeat_pkt(); i++)
@@ -302,6 +460,7 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
 				 const struct net *net)
 {
 	unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
+	garble_tuple_v6_t tuple6;
 	int payload_len = sizeof(payload);
 	int i;
 
@@ -322,7 +481,13 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
 	if (!garble_check_if_wellknown_port_obf_enabled() && check_if_well_known_tcp_port(dport))
                 return;
 
-        if (!generate_tcp_payload(payload, &payload_len))
+	tuple6.saddr = *saddr;
+	tuple6.daddr = *daddr;
+	tuple6.sport = sport;
+	tuple6.dport = dport;
+	tuple6.protocol = IPPROTO_TCP;
+
+        if (!generate_tcp_payload(payload, &payload_len, NULL, &tuple6))
                 return;
 
 	for (i = 0; i < garble_get_tcp_repeat_pkt(); i++)

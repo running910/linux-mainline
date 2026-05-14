@@ -18,6 +18,7 @@ inline bool garble_check_if_tcp_aggressive(void);
 inline bool garble_check_if_http_enabled(void);
 inline bool garble_check_if_tls_enabled(void);
 inline bool garble_check_if_tcp_double_enabled(void);
+inline bool garble_check_if_tcp_obf_enabled(void);
 inline bool garble_check_if_tcp_disabled(void);
 inline bool garble_check_if_udp_enabled(void);
 inline bool garble_check_if_udp_aggressive(void);
@@ -36,6 +37,7 @@ inline bool garble_check_if_udp_binary_enabled(void);
 inline int garble_get_udp_ttl(void);
 inline int garble_get_tcp_ttl(void);
 inline int garble_get_udp_obf_proto(void);
+inline int garble_get_tcp_obf_proto(void);
 inline const char *garble_get_udp_extra(void);
 inline int garble_check_if_lan_nic(const char *nic);
 inline void garble_stats_account_tcp_v4(u32 bytes);
@@ -50,6 +52,7 @@ extern bool garble_check_if_tcp_aggressive(void);
 extern bool garble_check_if_http_enabled(void);
 extern bool garble_check_if_tls_enabled(void);
 extern bool garble_check_if_tcp_double_enabled(void);
+extern bool garble_check_if_tcp_obf_enabled(void);
 extern bool garble_check_if_tcp_disabled(void);
 extern bool garble_check_if_udp_enabled(void);
 extern bool garble_check_if_udp_aggressive(void);
@@ -68,6 +71,7 @@ extern bool garble_check_if_udp_binary_enabled(void);
 extern int garble_get_udp_ttl(void);
 extern int garble_get_tcp_ttl(void);
 extern int garble_get_udp_obf_proto(void);
+extern int garble_get_tcp_obf_proto(void);
 extern const char *garble_get_udp_extra(void);
 extern int garble_check_if_lan_nic(const char *nic);
 extern void garble_stats_account_tcp_v4(u32 bytes);
@@ -91,6 +95,17 @@ enum udp_obf_proto {
 	UDP_OBF_BILIBILI_LIVE = 10,
 
 	UDP_OBF_PROTO_MAX
+};
+
+enum tcp_obf_proto {
+	TCP_OBF_HTTP = 0,
+	TCP_OBF_TLS_CLIENTHELLO = 1,
+	TCP_OBF_SSH_BANNER = 2,
+	TCP_OBF_RTMP_HANDSHAKE = 3,
+	TCP_OBF_POSTGRES_STARTUP = 4,
+	TCP_OBF_MQTT_CONNECT = 5,
+
+	TCP_OBF_PROTO_MAX
 };
 
 #endif // __GARBLE_SYSCTL_H__

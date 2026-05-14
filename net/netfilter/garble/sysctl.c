@@ -39,6 +39,7 @@ static int garble_enabled = 0;
 static char garble_args[DOMAINS_BUF_LEN] = "";
 static char garble_lan_args[LAN_NICS_BUF_LEN] = "br-virt,br-vmbr0";
 static int garble_http_enabled = 0;
+static int garble_tcp_enabled = 0;
 static int garble_udp_enabled = 0;
 static int garble_tcp_aggressive = 0;
 static int garble_tcp_avg_pkt = 0;
@@ -54,6 +55,7 @@ static int garble_tcp_binary_payload = 0;
 static int garble_udp_binary_payload = 0;
 static int garble_udp_ttl = 3;                          // Default TTL value for UDP packets
 static int garble_udp_obf_proto = 0;                    // UDP obfuscation proto: 0=turn allocate request, 1=wechat live video, 2=sip invite, 3=dtls client hello, 4=turn create permission, 5=turn allocate error response, 6=turn channel bind, 7=tftp rrq, 8=wechat video new, 9=xiaomi camera, 10=bilibili live
+static int garble_tcp_obf_proto = TCP_OBF_TLS_CLIENTHELLO; // TCP obfuscation proto: 0=http, 1=tls client hello, 2=ssh banner, 3=rtmp handshake, 4=postgres startup, 5=mqtt connect
 static int garble_tcp_ttl = 3;                          // Default TTL value for TCP packets
 static char garble_udp_extra[UDP_EXTRA_BUF_LEN] ={0};   // UDP extra configuration string
 
@@ -175,6 +177,37 @@ static int proc_handler_udp_obf_proto(struct ctl_table *table, int write,
 	/* Update the actual obfuscation profile value */
 	*(int *)table->data = new_obf_pro;
 	pr_info("garble: UDP obfuscation proto updated to %d\n", new_obf_pro);
+
+	return 0;
+}
+
+static int proc_handler_tcp_obf_proto(struct ctl_table *table, int write,
+				    void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int new_obf_pro;
+	struct ctl_table tmp_table;
+
+	if (!write) {
+		return proc_dointvec(table, write, buffer, lenp, ppos);
+	}
+
+	memset(&tmp_table, 0, sizeof(tmp_table));
+	tmp_table.data = &new_obf_pro;
+	tmp_table.maxlen = sizeof(int);
+
+	ret = proc_dointvec(&tmp_table, write, buffer, lenp, ppos);
+	if (ret != 0) {
+		return ret;
+	}
+
+	if (new_obf_pro < 0 || new_obf_pro >= TCP_OBF_PROTO_MAX) {
+		pr_info("garble: TCP obfuscation proto value %d is out of range [0, %d]\n", new_obf_pro, TCP_OBF_PROTO_MAX - 1);
+		return -EINVAL;
+	}
+
+	*(int *)table->data = new_obf_pro;
+	pr_info("garble: TCP obfuscation proto updated to %d\n", new_obf_pro);
 
 	return 0;
 }
@@ -423,6 +456,13 @@ static struct ctl_table garble_table[] = {
 		.proc_handler = proc_dointvec,
         },
 	{
+		.procname	= "enable_tcp",
+		.data		= &garble_tcp_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
 		.procname	= "enable_udp",
 		.data		= &garble_udp_enabled,
 		.maxlen		= sizeof(int),
@@ -533,6 +573,13 @@ static struct ctl_table garble_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_handler_udp_obf_proto,
+	},
+	{
+		.procname	= "tcp_obf_proto",
+		.data		= &garble_tcp_obf_proto,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_handler_tcp_obf_proto,
 	},
 	{
 		.procname	= "udp_extra",
@@ -796,7 +843,8 @@ void garble_sysctl_exit(void)
 
 inline bool garble_check_if_tcp_enabled(void)
 {
-	return garble_enabled || garble_http_enabled || garble_tcp_binary_payload;
+	return garble_enabled || garble_http_enabled || garble_tcp_enabled ||
+	       garble_tcp_binary_payload;
 }
 
 inline bool garble_check_if_tcp_aggressive(void)
@@ -807,6 +855,11 @@ inline bool garble_check_if_tcp_aggressive(void)
 inline bool garble_check_if_tcp_double_enabled(void)
 {
 	return garble_enabled && garble_http_enabled;
+}
+
+inline bool garble_check_if_tcp_obf_enabled(void)
+{
+	return garble_tcp_enabled;
 }
 
 inline bool garble_check_if_tls_enabled(void)
@@ -821,7 +874,8 @@ inline bool garble_check_if_http_enabled(void)
 
 inline bool garble_check_if_tcp_disabled(void)
 {
-	return !garble_enabled && !garble_http_enabled && !garble_tcp_binary_payload;
+	return !garble_enabled && !garble_http_enabled && !garble_tcp_enabled &&
+	       !garble_tcp_binary_payload;
 }
 
 inline bool garble_check_if_udp_enabled(void)
@@ -897,6 +951,11 @@ inline int garble_get_udp_ttl(void)
 inline int garble_get_udp_obf_proto(void)
 {
 	return garble_udp_obf_proto;
+}
+
+inline int garble_get_tcp_obf_proto(void)
+{
+	return garble_tcp_obf_proto;
 }
 
 inline const char *garble_get_random_domain(void)
