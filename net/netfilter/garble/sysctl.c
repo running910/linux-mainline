@@ -18,6 +18,7 @@
 #define DOMAINS_BUF_LEN 1048576
 #define MAX_DOMAINS     131072
 #define UDP_EXTRA_BUF_LEN 512
+#define TCP_OBF_PROTOS_BUF_LEN 256
 #define LAN_NICS_BUF_LEN 512
 #define MAX_LAN_NICS    20
 
@@ -35,11 +36,16 @@ struct garble_lan_config {
 	struct rcu_head rcu;                    // RCU删除钩子
 };
 
+struct garble_tcp_obf_config {
+	char proto_buf[TCP_OBF_PROTOS_BUF_LEN];
+	unsigned long mask;
+	struct rcu_head rcu;
+};
+
 static int garble_enabled = 0;
 static char garble_args[DOMAINS_BUF_LEN] = "";
 static char garble_lan_args[LAN_NICS_BUF_LEN] = "br-virt,br-vmbr0";
 static int garble_http_enabled = 0;
-static int garble_tcp_enabled = 0;
 static int garble_udp_enabled = 0;
 static int garble_tcp_aggressive = 0;
 static int garble_tcp_avg_pkt = 0;
@@ -55,15 +61,17 @@ static int garble_tcp_binary_payload = 0;
 static int garble_udp_binary_payload = 0;
 static int garble_udp_ttl = 3;                          // Default TTL value for UDP packets
 static int garble_udp_obf_proto = 0;                    // UDP obfuscation proto: 0=turn allocate request, 1=wechat live video, 2=sip invite, 3=dtls client hello, 4=turn create permission, 5=turn allocate error response, 6=turn channel bind, 7=tftp rrq, 8=wechat video new, 9=xiaomi camera, 10=bilibili live
-static int garble_tcp_obf_proto = TCP_OBF_TLS_CLIENTHELLO; // TCP obfuscation proto: 0=http, 1=tls client hello, 2=ssh banner, 3=rtmp handshake, 4=postgres startup, 5=mqtt connect
+static char garble_tcp_obf_protos[TCP_OBF_PROTOS_BUF_LEN] = ""; // comma separated TCP obfuscation protos: http,tls,ssh,rtmp,postgres,mqtt
 static int garble_tcp_ttl = 3;                          // Default TTL value for TCP packets
 static char garble_udp_extra[UDP_EXTRA_BUF_LEN] ={0};   // UDP extra configuration string
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
 static struct garble_lan_config __rcu *garble_lan_cfg_ptr = NULL;
+static struct garble_tcp_obf_config __rcu *garble_tcp_obf_cfg_ptr = NULL;
 
 static DEFINE_SPINLOCK(garble_cfg_lock);
 static DEFINE_SPINLOCK(garble_lan_cfg_lock);
+static DEFINE_SPINLOCK(garble_tcp_obf_cfg_lock);
 
 static struct {
 	char data[GARBLE_MAX_UDP_PAYLOAD];
@@ -112,6 +120,14 @@ static void garble_config_free(struct rcu_head *head)
 static void garble_lan_config_free(struct rcu_head *head)
 {
 	struct garble_lan_config *cfg = container_of(head, struct garble_lan_config, rcu);
+	kfree(cfg);
+}
+
+static void garble_tcp_obf_config_free(struct rcu_head *head)
+{
+	struct garble_tcp_obf_config *cfg =
+		container_of(head, struct garble_tcp_obf_config, rcu);
+
 	kfree(cfg);
 }
 
@@ -181,33 +197,109 @@ static int proc_handler_udp_obf_proto(struct ctl_table *table, int write,
 	return 0;
 }
 
-static int proc_handler_tcp_obf_proto(struct ctl_table *table, int write,
+static int garble_tcp_obf_proto_from_token(const char *token)
+{
+	int proto;
+
+	if (!strcmp(token, "http"))
+		return TCP_OBF_HTTP;
+	if (!strcmp(token, "tls") || !strcmp(token, "tls_clienthello"))
+		return TCP_OBF_TLS_CLIENTHELLO;
+	if (!strcmp(token, "ssh") || !strcmp(token, "ssh_banner"))
+		return TCP_OBF_SSH_BANNER;
+	if (!strcmp(token, "rtmp") || !strcmp(token, "rtmp_handshake"))
+		return TCP_OBF_RTMP_HANDSHAKE;
+	if (!strcmp(token, "postgres") || !strcmp(token, "postgres_startup"))
+		return TCP_OBF_POSTGRES_STARTUP;
+	if (!strcmp(token, "mqtt") || !strcmp(token, "mqtt_connect"))
+		return TCP_OBF_MQTT_CONNECT;
+
+	if (!kstrtoint(token, 0, &proto) && proto >= 0 &&
+	    proto < TCP_OBF_PROTO_MAX)
+		return proto;
+
+	return -EINVAL;
+}
+
+static struct garble_tcp_obf_config *garble_parse_tcp_obf_protos(const char *src)
+{
+	char *s;
+	char *token;
+	struct garble_tcp_obf_config *cfg;
+	int proto;
+
+	if (!src)
+		return NULL;
+
+	cfg = kzalloc(sizeof(*cfg), GFP_KERNEL);
+	if (!cfg)
+		return NULL;
+
+	if (strscpy(cfg->proto_buf, src, sizeof(cfg->proto_buf)) < 0) {
+		kfree(cfg);
+		return NULL;
+	}
+
+	s = cfg->proto_buf;
+	while ((token = strsep(&s, ",")) != NULL) {
+		token = strim(token);
+		if (*token == '\0')
+			continue;
+
+		proto = garble_tcp_obf_proto_from_token(token);
+		if (proto < 0) {
+			kfree(cfg);
+			return NULL;
+		}
+
+		cfg->mask |= BIT(proto);
+	}
+
+	return cfg;
+}
+
+static int proc_handler_tcp_obf_protos(struct ctl_table *table, int write,
 				    void __user *buffer, size_t *lenp, loff_t *ppos)
 {
-	int ret;
-	int new_obf_pro;
+	char tmp[TCP_OBF_PROTOS_BUF_LEN];
 	struct ctl_table tmp_table;
+	struct garble_tcp_obf_config *new_cfg;
+	struct garble_tcp_obf_config *old_cfg;
+	unsigned long flags;
+	int ret;
 
-	if (!write) {
-		return proc_dointvec(table, write, buffer, lenp, ppos);
-	}
+	if (!write)
+		return proc_dostring(table, write, buffer, lenp, ppos);
 
-	memset(&tmp_table, 0, sizeof(tmp_table));
-	tmp_table.data = &new_obf_pro;
-	tmp_table.maxlen = sizeof(int);
+	strscpy(tmp, (char *)table->data, sizeof(tmp));
+	tmp_table = *table;
+	tmp_table.data = tmp;
+	tmp_table.maxlen = sizeof(tmp);
 
-	ret = proc_dointvec(&tmp_table, write, buffer, lenp, ppos);
-	if (ret != 0) {
+	ret = proc_dostring(&tmp_table, write, buffer, lenp, ppos);
+	if (ret != 0)
 		return ret;
-	}
 
-	if (new_obf_pro < 0 || new_obf_pro >= TCP_OBF_PROTO_MAX) {
-		pr_info("garble: TCP obfuscation proto value %d is out of range [0, %d]\n", new_obf_pro, TCP_OBF_PROTO_MAX - 1);
+	new_cfg = garble_parse_tcp_obf_protos(tmp);
+	if (!new_cfg) {
+		pr_info("garble: invalid tcp_obf_protos value: %s\n",
+			tmp);
 		return -EINVAL;
 	}
 
-	*(int *)table->data = new_obf_pro;
-	pr_info("garble: TCP obfuscation proto updated to %d\n", new_obf_pro);
+	strscpy((char *)table->data, tmp, table->maxlen);
+
+	spin_lock_irqsave(&garble_tcp_obf_cfg_lock, flags);
+	old_cfg = rcu_dereference_protected(garble_tcp_obf_cfg_ptr,
+			lockdep_is_held(&garble_tcp_obf_cfg_lock));
+	rcu_assign_pointer(garble_tcp_obf_cfg_ptr, new_cfg);
+	spin_unlock_irqrestore(&garble_tcp_obf_cfg_lock, flags);
+
+	if (old_cfg)
+		call_rcu(&old_cfg->rcu, garble_tcp_obf_config_free);
+
+	pr_info("garble: tcp_obf_protos updated to %s\n",
+		new_cfg->mask ? tmp : "(disabled)");
 
 	return 0;
 }
@@ -456,13 +548,6 @@ static struct ctl_table garble_table[] = {
 		.proc_handler = proc_dointvec,
         },
 	{
-		.procname	= "enable_tcp",
-		.data		= &garble_tcp_enabled,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
-	},
-	{
 		.procname	= "enable_udp",
 		.data		= &garble_udp_enabled,
 		.maxlen		= sizeof(int),
@@ -576,10 +661,10 @@ static struct ctl_table garble_table[] = {
 	},
 	{
 		.procname	= "tcp_obf_proto",
-		.data		= &garble_tcp_obf_proto,
-		.maxlen		= sizeof(int),
+		.data		= garble_tcp_obf_protos,
+		.maxlen		= TCP_OBF_PROTOS_BUF_LEN,
 		.mode		= 0644,
-		.proc_handler	= proc_handler_tcp_obf_proto,
+		.proc_handler	= proc_handler_tcp_obf_protos,
 	},
 	{
 		.procname	= "udp_extra",
@@ -752,6 +837,7 @@ static const struct file_operations garble_stats_proc_ops = {
 int garble_sysctl_init(void)
 {
 	struct garble_lan_config *default_lan_cfg;
+	struct garble_tcp_obf_config *default_tcp_obf_cfg;
 	unsigned long flags;
 
         garble_sysctl_header = register_sysctl_table(garble_net_root);
@@ -798,9 +884,19 @@ int garble_sysctl_init(void)
 	if (!default_lan_cfg)
 		return -ENOMEM;
 
+	default_tcp_obf_cfg = garble_parse_tcp_obf_protos(garble_tcp_obf_protos);
+	if (!default_tcp_obf_cfg) {
+		kfree(default_lan_cfg);
+		return -ENOMEM;
+	}
+
 	spin_lock_irqsave(&garble_lan_cfg_lock, flags);
 	rcu_assign_pointer(garble_lan_cfg_ptr, default_lan_cfg);
 	spin_unlock_irqrestore(&garble_lan_cfg_lock, flags);
+
+	spin_lock_irqsave(&garble_tcp_obf_cfg_lock, flags);
+	rcu_assign_pointer(garble_tcp_obf_cfg_ptr, default_tcp_obf_cfg);
+	spin_unlock_irqrestore(&garble_tcp_obf_cfg_lock, flags);
 
         return 0;
 }
@@ -809,6 +905,7 @@ void garble_sysctl_exit(void)
 {
 	struct garble_config *cfg;
 	struct garble_lan_config *lan_cfg;
+	struct garble_tcp_obf_config *tcp_obf_cfg;
 	unsigned long flags;
 
 	unregister_sysctl_table(garble_sysctl_header);
@@ -839,11 +936,21 @@ void garble_sysctl_exit(void)
 
 	if (lan_cfg)
 		call_rcu(&lan_cfg->rcu, garble_lan_config_free);
+
+	spin_lock_irqsave(&garble_tcp_obf_cfg_lock, flags);
+	tcp_obf_cfg = rcu_dereference_protected(garble_tcp_obf_cfg_ptr,
+					    lockdep_is_held(&garble_tcp_obf_cfg_lock));
+	rcu_assign_pointer(garble_tcp_obf_cfg_ptr, NULL);
+	spin_unlock_irqrestore(&garble_tcp_obf_cfg_lock, flags);
+
+	if (tcp_obf_cfg)
+		call_rcu(&tcp_obf_cfg->rcu, garble_tcp_obf_config_free);
 }
 
 inline bool garble_check_if_tcp_enabled(void)
 {
-	return garble_enabled || garble_http_enabled || garble_tcp_enabled ||
+	return garble_enabled || garble_http_enabled ||
+	       garble_check_if_tcp_obf_enabled() ||
 	       garble_tcp_binary_payload;
 }
 
@@ -859,7 +966,15 @@ inline bool garble_check_if_tcp_double_enabled(void)
 
 inline bool garble_check_if_tcp_obf_enabled(void)
 {
-	return garble_tcp_enabled;
+	struct garble_tcp_obf_config *cfg;
+	bool enabled;
+
+	rcu_read_lock();
+	cfg = rcu_dereference(garble_tcp_obf_cfg_ptr);
+	enabled = cfg && cfg->mask;
+	rcu_read_unlock();
+
+	return enabled;
 }
 
 inline bool garble_check_if_tls_enabled(void)
@@ -874,7 +989,8 @@ inline bool garble_check_if_http_enabled(void)
 
 inline bool garble_check_if_tcp_disabled(void)
 {
-	return !garble_enabled && !garble_http_enabled && !garble_tcp_enabled &&
+	return !garble_enabled && !garble_http_enabled &&
+	       !garble_check_if_tcp_obf_enabled() &&
 	       !garble_tcp_binary_payload;
 }
 
@@ -955,7 +1071,38 @@ inline int garble_get_udp_obf_proto(void)
 
 inline int garble_get_tcp_obf_proto(void)
 {
-	return garble_tcp_obf_proto;
+	struct garble_tcp_obf_config *cfg;
+	unsigned long mask;
+	int count = 0;
+	int target;
+	int i;
+
+	rcu_read_lock();
+	cfg = rcu_dereference(garble_tcp_obf_cfg_ptr);
+	mask = cfg ? cfg->mask : BIT(TCP_OBF_TLS_CLIENTHELLO);
+
+	for (i = 0; i < TCP_OBF_PROTO_MAX; i++) {
+		if (mask & BIT(i))
+			count++;
+	}
+
+	if (!count) {
+		rcu_read_unlock();
+		return TCP_OBF_TLS_CLIENTHELLO;
+	}
+
+	target = prandom_u32() % count;
+	for (i = 0; i < TCP_OBF_PROTO_MAX; i++) {
+		if (!(mask & BIT(i)))
+			continue;
+		if (target-- == 0) {
+			rcu_read_unlock();
+			return i;
+		}
+	}
+
+	rcu_read_unlock();
+	return TCP_OBF_TLS_CLIENTHELLO;
 }
 
 inline const char *garble_get_random_domain(void)

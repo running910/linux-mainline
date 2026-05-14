@@ -318,7 +318,7 @@ static inline unsigned char *build_mqtt_connect_payload(unsigned char *buf,
 	int client_id_len;
 	int remaining_len;
 
-	memcpy(client_id, "garble-", 7);
+	memcpy(client_id, "mqttx_", 7);
 	for (i = 7; i < sizeof(client_id) - 1; i++)
 		client_id[i] = garble_rand_alnum();
 	client_id[sizeof(client_id) - 1] = '\0';
@@ -396,13 +396,14 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 
         if (garble_check_if_tcp_double_enabled()) {
                 proto = (prandom_u32() % 2) ? TCP_OBF_TLS_CLIENTHELLO : TCP_OBF_HTTP;
+	
         } else if (garble_check_if_tls_enabled()) {
                 proto = TCP_OBF_TLS_CLIENTHELLO;
         } else if (garble_check_if_http_enabled()) {
                 proto = TCP_OBF_HTTP;
-	} else if (garble_check_if_tcp_obf_enabled()) {
+        } else if (garble_check_if_tcp_obf_enabled()) {
                 proto = garble_get_tcp_obf_proto();
-        
+		
         // this is impossible
         } else {
                 return NULL;
