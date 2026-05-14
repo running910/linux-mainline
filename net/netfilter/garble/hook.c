@@ -50,13 +50,17 @@
 
 inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
 inline unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
-inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len);
+inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
+					garble_tuple_t *tuple,
+					garble_tuple_v6_t *tuple6);
 
 #else
 
 extern unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
 extern unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
-extern unsigned char *build_udp_payload(unsigned char *buf, int *out_len);
+extern unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
+					garble_tuple_t *tuple,
+					garble_tuple_v6_t *tuple6);
 
 #endif
 
@@ -329,6 +333,7 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
 void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct net *net)
 {
 	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
+	garble_tuple_t tuple;
 	int payload_len;
 	int i;
 
@@ -344,8 +349,14 @@ void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
 	if (!garble_check_if_wellknown_port_obf_enabled() && check_if_well_known_udp_port(dport))
 		return;
 
+	tuple.saddr = saddr;
+	tuple.daddr = daddr;
+	tuple.sport = sport;
+	tuple.dport = dport;
+	tuple.protocol = IPPROTO_UDP;
+
 	payload_len = sizeof(payload);
-	if (!build_udp_payload(payload, &payload_len))
+	if (!build_udp_payload(payload, &payload_len, &tuple, NULL))
 		return;
 
 	for (i = 0; i < garble_get_udp_repeat_pkt(); i++)
@@ -357,6 +368,7 @@ EXPORT_SYMBOL(garble_insert_udp_packet);
 void garble_insert_udp_packet_v6(const struct in6_addr *saddr, const struct in6_addr *daddr, __be16 sport, __be16 dport, const struct net *net)
 {
 	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
+	garble_tuple_v6_t tuple6;
 	int payload_len = sizeof(payload);
 	int i;
 
@@ -373,8 +385,14 @@ void garble_insert_udp_packet_v6(const struct in6_addr *saddr, const struct in6_
 	if (!garble_check_if_wellknown_port_obf_enabled() && check_if_well_known_udp_port(dport))
                 return;
 
+	tuple6.saddr = *saddr;
+	tuple6.daddr = *daddr;
+	tuple6.sport = sport;
+	tuple6.dport = dport;
+	tuple6.protocol = IPPROTO_UDP;
+
  	payload_len = sizeof(payload);
-	if (!build_udp_payload(payload, &payload_len))
+	if (!build_udp_payload(payload, &payload_len, NULL, &tuple6))
 		return;
 
 	for (i = 0; i < garble_get_udp_repeat_pkt(); i++)

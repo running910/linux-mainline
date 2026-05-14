@@ -10,6 +10,7 @@
 #include <net/checksum.h>
 
 #include "sysctl.h"
+#include "packet.h"
 #include "stun.h"
 #include "sip.h"
 
@@ -115,6 +116,48 @@ static inline unsigned char garble_rand_u8(void)
 	return (unsigned char)garble_rand_u32();
 }
 
+static inline unsigned char *garble_put_be16(unsigned char *ptr, u16 val)
+{
+	*ptr++ = val >> 8;
+	*ptr++ = val;
+	return ptr;
+}
+
+static inline unsigned char *garble_put_be32(unsigned char *ptr, u32 val)
+{
+	*ptr++ = val >> 24;
+	*ptr++ = val >> 16;
+	*ptr++ = val >> 8;
+	*ptr++ = val;
+	return ptr;
+}
+
+static inline unsigned char *garble_put_udt_peer_addr(unsigned char *ptr,
+						      garble_tuple_t *tuple,
+						      garble_tuple_v6_t *tuple6)
+{
+	if (tuple) {
+		u8 *addr = (u8 *)&tuple->daddr;
+		// make sure keeep the same with BILIBILI live handshake
+		ptr[0] = addr[3];
+		ptr[1] = addr[2];
+		ptr[2] = addr[1];
+		ptr[3] = addr[0];
+		ptr += sizeof(tuple->daddr);
+		memset(ptr, 0, 12);
+		return ptr + 12;
+	}
+
+	if (tuple6) {
+		memcpy(ptr, &tuple6->daddr, sizeof(tuple6->daddr));
+		return ptr + sizeof(tuple6->daddr);
+	}
+
+	ptr = garble_put_be32(ptr, garble_rand_u32());
+	memset(ptr, 0, 12);
+	return ptr + 12;
+}
+
 static inline unsigned char *garble_write_rand_varint(unsigned char *ptr,
 						      int bytes)
 {
@@ -125,6 +168,39 @@ static inline unsigned char *garble_write_rand_varint(unsigned char *ptr,
 
 	*ptr++ = 1 + (garble_rand_u8() & 0x7f);
 	return ptr;
+}
+
+inline unsigned char *build_bilibili_live_handshake(unsigned char *buf, int *out_len,
+						    garble_tuple_t *tuple,
+						    garble_tuple_v6_t *tuple6)
+{
+	unsigned char *ptr = buf;
+	//bool conclusion = garble_rand_u32() & 1;
+	bool conclusion = 0;
+	u32 dst_socket_id = conclusion ? garble_rand_u32() : 0;
+	u32 socket_id = garble_rand_u32();
+	u32 timestamp = garble_rand_u32() & 0x7fffffff;
+	u32 type = conclusion ? 0xffffffff : 0x00000001;
+
+	ptr = garble_put_be16(ptr, 0x8000);
+	ptr = garble_put_be16(ptr, 0x0000);
+	ptr = garble_put_be32(ptr, 0x00000000);
+	ptr = garble_put_be32(ptr, timestamp);
+	ptr = garble_put_be32(ptr, dst_socket_id);
+
+	ptr = garble_put_be32(ptr, 0x00000004);
+	ptr = garble_put_be32(ptr, 0x00000002);
+	ptr = garble_put_be32(ptr, garble_rand_u32() & 0x7fffffff);
+	ptr = garble_put_be32(ptr, 0x000005dc);
+	ptr = garble_put_be32(ptr, 0x00002000);
+	ptr = garble_put_be32(ptr, type);
+	ptr = garble_put_be32(ptr, socket_id);
+	ptr = garble_put_be32(ptr, conclusion ? garble_rand_u32() : 0x00000000);
+
+	ptr = garble_put_udt_peer_addr(ptr, tuple, tuple6);
+
+	*out_len = ptr - buf;
+	return buf;
 }
 
 static inline unsigned char *build_wechat_video_new_d5(unsigned char *buf, int *out_len)
@@ -232,7 +308,9 @@ inline unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len
 	return buf;
 }
 
-inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
+inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
+					garble_tuple_t *tuple,
+					garble_tuple_v6_t *tuple6)
 {
 	if (garble_check_if_udp_binary_enabled())
 		return build_payload_from_binary(buf, out_len);
@@ -252,6 +330,8 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len)
 		return build_wechat_video_new_payload(buf, out_len);
 	case UDP_OBF_XIAOMI_CAMERA:
 		return build_xiaomi_camera_handshake(buf, out_len);
+	case UDP_OBF_BILIBILI_LIVE:
+		return build_bilibili_live_handshake(buf, out_len, tuple, tuple6);
 	case UDP_OBF_WECHAT_VIDEO:
 		return build_wechat_video_call_msg(buf, out_len);
 	case UDP_OBF_SIP_INVITE:
