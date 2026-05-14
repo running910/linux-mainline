@@ -1,3 +1,11 @@
+2026-5-14 19:42:32
+8708e68508246ffd6ad4ddbebd20391295325c05
+之前很困惑的pppoe场景下ipv6的neighbor cache
+居然也能满，从上游linux stable linux-5.10.x
+拿到的这个修复commit，更激进的释放策略
+
+
+
 2026-5-14 17:35:24
 8eec71b70011215d4d214ddbaf29aed5e151a1e5
 用c79和fpb容器抓包，发现ssh第一个包确实是固定不变的，
