@@ -97,6 +97,7 @@ void nf_garble_insert_tcp_packet_aggressive(struct sk_buff *skb,
 }
 
 void nf_garble_insert_tcp_packet_client(struct sk_buff *skb,
+					u32 seq, u32 ack_seq,
 					const struct net *net)
 {
 	const struct nf_garble_ops *ops;
@@ -104,6 +105,6 @@ void nf_garble_insert_tcp_packet_client(struct sk_buff *skb,
 	rcu_read_lock();
 	ops = rcu_dereference(nf_garble_ops);
 	if (ops)
-		ops->insert_tcp_packet_client(skb, net);
+		ops->insert_tcp_packet_client(skb, seq, ack_seq, net);
 	rcu_read_unlock();
 }

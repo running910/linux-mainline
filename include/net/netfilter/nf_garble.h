@@ -20,8 +20,9 @@ struct nf_garble_ops {
 				       __be16 protocol,
 				       struct net *net);
 	void (*insert_tcp_packet_aggressive)(struct sk_buff *skb,
-				       const struct net *net);
+					     const struct net *net);
 	void (*insert_tcp_packet_client)(struct sk_buff *skb,
+				   u32 seq, u32 ack_seq,
 				   const struct net *net);
 };
 
@@ -43,6 +44,7 @@ void nf_garble_insert_udp_packet_aggressive(struct sk_buff *skb,
 void nf_garble_insert_tcp_packet_aggressive(struct sk_buff *skb,
 					    const struct net *net);
 void nf_garble_insert_tcp_packet_client(struct sk_buff *skb,
+					u32 seq, u32 ack_seq,
 					const struct net *net);
 #else
 static inline int nf_garble_register_ops(const struct nf_garble_ops *ops)
@@ -81,6 +83,7 @@ static inline void nf_garble_insert_tcp_packet_aggressive(struct sk_buff *skb,
 }
 
 static inline void nf_garble_insert_tcp_packet_client(struct sk_buff *skb,
+					       u32 seq, u32 ack_seq,
 					       const struct net *net)
 {
 }

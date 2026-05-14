@@ -18,6 +18,7 @@ extern void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 prot
 
 extern void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, const struct net *net);
 
-extern void garble_insert_tcp_packet_client(struct sk_buff *skb, const struct net *net);
+extern void garble_insert_tcp_packet_client(struct sk_buff *skb, u32 seq,
+					    u32 ack_seq, const struct net *net);
 
 #endif

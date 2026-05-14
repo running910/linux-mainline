@@ -6198,7 +6198,10 @@ discard:
 			tcp_send_ack(sk);
 #if IS_ENABLED(CONFIG_NF_GARBLE)
 			if (sk)
-				nf_garble_insert_tcp_packet_client(skb, sock_net(sk));
+				nf_garble_insert_tcp_packet_client(skb,
+								    tp->snd_nxt,
+								    tp->rcv_nxt,
+								    sock_net(sk));
 #endif
 		}
 		return -1;

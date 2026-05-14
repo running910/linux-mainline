@@ -14,7 +14,8 @@
 #include "packet.h"
 #include "hook.h"
 
-extern void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reverse);
+extern void insert_packet_with_skb(struct sk_buff *skb, const struct net *net,
+				   int reverse, u32 seq, u32 ack_seq);
 
 const char *garble_get_nf_hook_point(enum nf_inet_hooks hook)
 {
@@ -122,7 +123,7 @@ static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const s
         } else if (state->pf == NFPROTO_IPV6) {
 
                 //log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with reversing src and dst");
-                insert_packet_with_skb(skb, state->net, 1);
+                insert_packet_with_skb(skb, state->net, 1, 0, 0);
         }
 
         // 避免后续hook重复处理
@@ -148,7 +149,7 @@ static unsigned int garble_local_in_hook(void *priv, struct sk_buff *skb, const 
         //log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with reversing src and dst");
         //__log("in=%s out=%s skb=%s", state->in ? state->in->name : "-", state->out ? state->out->name : "-", skb->dev ? skb->dev->name : "-");
 
-        insert_packet_with_skb(skb, state->net, 1);
+        insert_packet_with_skb(skb, state->net, 1, 0, 0);
 
         return NF_ACCEPT;
 }
@@ -171,7 +172,7 @@ static unsigned int garble_local_out_hook(void *priv, struct sk_buff *skb, const
         //log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection without reversing");
         //__log("in=%s out=%s skb=%s", state->in ? state->in->name : "-", state->out ? state->out->name : "-", skb->dev ? skb->dev->name : "-");
 
-        insert_packet_with_skb(skb, state->net, 0);
+        insert_packet_with_skb(skb, state->net, 0, 0, 0);
 
         // 避免后续hook重复处理
         garble_clear_packet_mark(skb);
@@ -221,7 +222,7 @@ static unsigned int garble_post_routing_hook(void *priv, struct sk_buff *skb, co
         }
 
       //  log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with SNATed src");
-        insert_packet_with_skb(skb, state->net, 0);
+        insert_packet_with_skb(skb, state->net, 0, 0, 0);
 
 	return NF_ACCEPT;
 }

@@ -564,7 +564,8 @@ void garble_insert_udp_packet_v6(const struct in6_addr *saddr, const struct in6_
 		generate_and_send_udp_packet_v6(saddr, daddr, sport, dport, net, payload, payload_len);
 }
 
-void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reverse)
+void insert_packet_with_skb(struct sk_buff *skb, const struct net *net,
+			    int reverse, u32 seq, u32 ack_seq)
 {
 	garble_tuple_t tuple;
 	garble_tuple_v6_t tuple6;
@@ -582,11 +583,11 @@ void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reve
 			if (reverse) {
 				garble_insert_tcp_packet(tuple.daddr, tuple.saddr,
 							 tuple.dport, tuple.sport,
-							 0, 0, net);
+							 seq, ack_seq, net);
 			} else {
 				garble_insert_tcp_packet(tuple.saddr, tuple.daddr,
 							 tuple.sport, tuple.dport,
-							 0, 0, net);
+							 seq, ack_seq, net);
 			}
 		} else if (tuple.protocol == IPPROTO_UDP) {
 
@@ -608,12 +609,12 @@ void insert_packet_with_skb(struct sk_buff *skb, const struct net *net, int reve
 				garble_insert_tcp_packet_v6(&tuple6.daddr, &tuple6.saddr,
 							    tuple6.dport,
 							    tuple6.sport,
-							    0, 0, net);
+							    seq, ack_seq, net);
 			else
 				garble_insert_tcp_packet_v6(&tuple6.saddr, &tuple6.daddr,
 							    tuple6.sport,
 							    tuple6.dport,
-							    0, 0, net);
+							    seq, ack_seq, net);
 		} else if (tuple6.protocol == IPPROTO_UDP) {
 
 			if (reverse)				
@@ -640,19 +641,20 @@ void garble_insert_udp_packet_aggressive(struct sk_buff *skb, __be16 protocol, s
                 return;
 
 	if (protocol == ETH_P_IP)
-		insert_packet_with_skb(skb, net, 0);
+		insert_packet_with_skb(skb, net, 0, 0, 0);
 	else if (protocol == ETH_P_IPV6)
-		insert_packet_with_skb(skb, net, 0);
+		insert_packet_with_skb(skb, net, 0, 0, 0);
 }
 
 // calling path:
 // case1: tcp_rcv_state_process => case TCP_SYN_SENT: => tcp_rcv_synsent_state_process => after tcp_send_ack()
-void garble_insert_tcp_packet_client(struct sk_buff *skb, const struct net *net)
+void garble_insert_tcp_packet_client(struct sk_buff *skb, u32 seq,
+				     u32 ack_seq, const struct net *net)
 {
 	if (!garble_check_if_tcp_client_enabled())
 		return;
 
-	insert_packet_with_skb(skb, net, 1);
+	insert_packet_with_skb(skb, net, 1, seq, ack_seq);
 }
 
 // calling path
@@ -673,5 +675,5 @@ void garble_insert_tcp_packet_aggressive(struct sk_buff *skb, const struct net *
 
 	//log_skb(skb, "garble: aggressive tcp packet insert!!!!!!!!!!!!!");
 
-	insert_packet_with_skb(skb, net, 0);
+	insert_packet_with_skb(skb, net, 0, 0, 0);
 }
