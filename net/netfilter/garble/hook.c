@@ -260,18 +260,34 @@ static inline char garble_rand_alnum(void)
 static inline unsigned char *build_ssh_banner_payload(unsigned char *buf,
 						      int *out_len)
 {
-	static const char *versions[] = {
-		"OpenSSH_8.9p1 Ubuntu-3",
-		"OpenSSH_9.3",
-		"dropbear_2022.82",
+	static const unsigned char banner_openssh_74[] = {
+		0x53, 0x53, 0x48, 0x2d, 0x32, 0x2e, 0x30, 0x2d,
+		0x4f, 0x70, 0x65, 0x6e, 0x53, 0x53, 0x48, 0x5f,
+		0x37, 0x2e, 0x34, 0x0d, 0x0a,
 	};
+	static const unsigned char banner_openssh_89_ubuntu[] = {
+		0x53, 0x53, 0x48, 0x2d, 0x32, 0x2e, 0x30, 0x2d,
+		0x4f, 0x70, 0x65, 0x6e, 0x53, 0x53, 0x48, 0x5f,
+		0x38, 0x2e, 0x39, 0x70, 0x31, 0x20, 0x55, 0x62,
+		0x75, 0x6e, 0x74, 0x75, 0x2d, 0x33, 0x75, 0x62,
+		0x75, 0x6e, 0x74, 0x75, 0x30, 0x2e, 0x34, 0x0d,
+		0x0a,
+	};
+	const unsigned char *banner;
 	int len;
 
-	len = snprintf((char *)buf, *out_len, "SSH-2.0-%s\r\n",
-		       versions[prandom_u32() % ARRAY_SIZE(versions)]);
-	if (len < 0 || len >= *out_len)
+	if (prandom_u32() & 1) {
+		banner = banner_openssh_74;
+		len = sizeof(banner_openssh_74);
+	} else {
+		banner = banner_openssh_89_ubuntu;
+		len = sizeof(banner_openssh_89_ubuntu);
+	}
+
+	if (*out_len < len)
 		return NULL;
 
+	memcpy(buf, banner, len);
 	*out_len = len;
 	return buf;
 }
