@@ -148,33 +148,74 @@ static void garble_tcp_obf_config_free(struct rcu_head *head)
 	kfree(cfg);
 }
 
-static const char * const garble_udp_obf_proto_names[] = {
-	[UDP_OBF_TURN_ALLOCATE] = "turn_allocate",
-	[UDP_OBF_WECHAT_VIDEO] = "wechat_video",
-	[UDP_OBF_SIP_INVITE] = "sip_invite",
-	[UDP_OBF_DTLS_CLIENTHELLO] = "dtls_clienthello",
-	[UDP_OBF_TURN_CREATE_PERMISSION] = "turn_create_permission",
-	[UDP_OBF_TURN_ALLOCATE_ERROR_RESPONSE] = "turn_allocate_error_response",
-	[UDP_OBF_TURN_CHANNEL_BIND] = "turn_channel_bind",
-	[UDP_OBF_TFTP_RRQ] = "tftp_rrq",
-	[UDP_OBF_WECHAT_VIDEO_NEW] = "wechat_video_new",
-	[UDP_OBF_XIAOMI_CAMERA] = "xiaomi_camera",
-	[UDP_OBF_BILIBILI_LIVE] = "bilibili_live",
+#define GARBLE_OBF_PROTO_NAME_MAX 2
+
+static const char * const garble_udp_obf_proto_names[][GARBLE_OBF_PROTO_NAME_MAX] = {
+	[UDP_OBF_TURN_ALLOCATE] = { "turn_allocate", "turn" },
+	[UDP_OBF_WECHAT_VIDEO] = { "wechat_video", "wechat" },
+	[UDP_OBF_SIP_INVITE] = { "sip_invite", "sip" },
+	[UDP_OBF_DTLS_CLIENTHELLO] = { "dtls_clienthello", "dtls" },
+	[UDP_OBF_TURN_CREATE_PERMISSION] = { "turn_create_permission" },
+	[UDP_OBF_TURN_ALLOCATE_ERROR_RESPONSE] = { "turn_allocate_error_response" },
+	[UDP_OBF_TURN_CHANNEL_BIND] = { "turn_channel_bind" },
+	[UDP_OBF_TFTP_RRQ] = { "tftp_rrq", "tftp" },
+	[UDP_OBF_WECHAT_VIDEO_NEW] = { "wechat_video_new" },
+	[UDP_OBF_XIAOMI_CAMERA] = { "xiaomi_camera", "xiaomi" },
+	[UDP_OBF_BILIBILI_LIVE] = { "bilibili_live", "bilibili" },
 };
 
-static const char * const garble_tcp_obf_proto_names[] = {
-	[TCP_OBF_HTTP] = "http",
-	[TCP_OBF_TLS_CLIENTHELLO] = "tls_clienthello",
-	[TCP_OBF_SSH_BANNER] = "ssh_banner",
-	[TCP_OBF_RTMP_HANDSHAKE] = "rtmp_handshake",
-	[TCP_OBF_POSTGRES_STARTUP] = "postgres_startup",
-	[TCP_OBF_MQTT_CONNECT] = "mqtt_connect",
-	[TCP_OBF_FTP_USER] = "ftp_user",
+static const char * const garble_tcp_obf_proto_names[][GARBLE_OBF_PROTO_NAME_MAX] = {
+	[TCP_OBF_HTTP] = { "http" },
+	[TCP_OBF_TLS_CLIENTHELLO] = { "tls_clienthello", "tls" },
+	[TCP_OBF_SSH_BANNER] = { "ssh_banner", "ssh" },
+	[TCP_OBF_RTMP_HANDSHAKE] = { "rtmp_handshake", "rtmp" },
+	[TCP_OBF_POSTGRES_STARTUP] = { "postgres_startup", "postgres" },
+	[TCP_OBF_MQTT_CONNECT] = { "mqtt_connect", "mqtt" },
+	[TCP_OBF_FTP_USER] = { "ftp_user", "ftp" },
 };
+
+static const char *garble_obf_proto_name(
+	const char * const names[][GARBLE_OBF_PROTO_NAME_MAX],
+	int proto_max, int proto)
+{
+	if (proto < 0 || proto >= proto_max || !names[proto][0])
+		return "unknown";
+
+	return names[proto][0];
+}
+
+static int garble_obf_proto_from_token(
+	const char * const names[][GARBLE_OBF_PROTO_NAME_MAX],
+	int proto_max, const char *token)
+{
+	int proto;
+	int i;
+
+	for (proto = 0; proto < proto_max; proto++) {
+		for (i = 0; i < GARBLE_OBF_PROTO_NAME_MAX; i++) {
+			if (names[proto][i] && !strcmp(token, names[proto][i]))
+				return proto;
+		}
+	}
+
+	return -EINVAL;
+}
+
+inline const char *garble_get_udp_obf_proto_name(int proto)
+{
+	return garble_obf_proto_name(garble_udp_obf_proto_names,
+				     UDP_OBF_PROTO_MAX, proto);
+}
+
+inline const char *garble_get_tcp_obf_proto_name(int proto)
+{
+	return garble_obf_proto_name(garble_tcp_obf_proto_names,
+				     TCP_OBF_PROTO_MAX, proto);
+}
 
 static void garble_format_obf_proto_mask(char *buf, size_t size,
 					 unsigned long mask,
-					 const char * const *names,
+					 const char * const names[][GARBLE_OBF_PROTO_NAME_MAX],
 					 int proto_max)
 {
 	size_t pos = 0;
@@ -195,7 +236,7 @@ static void garble_format_obf_proto_mask(char *buf, size_t size,
 
 		pos += scnprintf(buf + pos, size - pos, "%s%s(%d)",
 				 pos ? "," : "",
-				 names[i] ? names[i] : "unknown", i);
+				 garble_obf_proto_name(names, proto_max, i), i);
 		if (pos >= size)
 			break;
 	}
@@ -238,28 +279,10 @@ static int garble_udp_obf_proto_from_token(const char *token)
 {
 	int proto;
 
-	if (!strcmp(token, "turn") || !strcmp(token, "turn_allocate"))
-		return UDP_OBF_TURN_ALLOCATE;
-	if (!strcmp(token, "wechat") || !strcmp(token, "wechat_video"))
-		return UDP_OBF_WECHAT_VIDEO;
-	if (!strcmp(token, "sip") || !strcmp(token, "sip_invite"))
-		return UDP_OBF_SIP_INVITE;
-	if (!strcmp(token, "dtls") || !strcmp(token, "dtls_clienthello"))
-		return UDP_OBF_DTLS_CLIENTHELLO;
-	if (!strcmp(token, "turn_create_permission"))
-		return UDP_OBF_TURN_CREATE_PERMISSION;
-	if (!strcmp(token, "turn_allocate_error_response"))
-		return UDP_OBF_TURN_ALLOCATE_ERROR_RESPONSE;
-	if (!strcmp(token, "turn_channel_bind"))
-		return UDP_OBF_TURN_CHANNEL_BIND;
-	if (!strcmp(token, "tftp") || !strcmp(token, "tftp_rrq"))
-		return UDP_OBF_TFTP_RRQ;
-	if (!strcmp(token, "wechat_video_new"))
-		return UDP_OBF_WECHAT_VIDEO_NEW;
-	if (!strcmp(token, "xiaomi") || !strcmp(token, "xiaomi_camera"))
-		return UDP_OBF_XIAOMI_CAMERA;
-	if (!strcmp(token, "bilibili") || !strcmp(token, "bilibili_live"))
-		return UDP_OBF_BILIBILI_LIVE;
+	proto = garble_obf_proto_from_token(garble_udp_obf_proto_names,
+					    UDP_OBF_PROTO_MAX, token);
+	if (proto >= 0)
+		return proto;
 
 	if (!kstrtoint(token, 0, &proto) && proto >= 0 &&
 	    proto < UDP_OBF_PROTO_MAX)
@@ -359,20 +382,10 @@ static int garble_tcp_obf_proto_from_token(const char *token)
 {
 	int proto;
 
-	if (!strcmp(token, "http"))
-		return TCP_OBF_HTTP;
-	if (!strcmp(token, "tls") || !strcmp(token, "tls_clienthello"))
-		return TCP_OBF_TLS_CLIENTHELLO;
-	if (!strcmp(token, "ssh") || !strcmp(token, "ssh_banner"))
-		return TCP_OBF_SSH_BANNER;
-	if (!strcmp(token, "rtmp") || !strcmp(token, "rtmp_handshake"))
-		return TCP_OBF_RTMP_HANDSHAKE;
-	if (!strcmp(token, "postgres") || !strcmp(token, "postgres_startup"))
-		return TCP_OBF_POSTGRES_STARTUP;
-	if (!strcmp(token, "mqtt") || !strcmp(token, "mqtt_connect"))
-		return TCP_OBF_MQTT_CONNECT;
-	if (!strcmp(token, "ftp") || !strcmp(token, "ftp_user"))
-		return TCP_OBF_FTP_USER;
+	proto = garble_obf_proto_from_token(garble_tcp_obf_proto_names,
+					    TCP_OBF_PROTO_MAX, token);
+	if (proto >= 0)
+		return proto;
 
 	if (!kstrtoint(token, 0, &proto) && proto >= 0 &&
 	    proto < TCP_OBF_PROTO_MAX)

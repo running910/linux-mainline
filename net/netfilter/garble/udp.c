@@ -312,10 +312,18 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
 					garble_tuple_t *tuple,
 					garble_tuple_v6_t *tuple6)
 {
+	int proto;
+
 	if (garble_check_if_udp_binary_enabled())
 		return build_payload_from_binary(buf, out_len);
 
-	switch (garble_get_udp_obf_proto()) {
+	proto = garble_get_udp_obf_proto();
+	if (tuple)
+		log_ipaddr(tuple->daddr,
+			   "garble: selected udp obf proto id=%d name=%s",
+			   proto, garble_get_udp_obf_proto_name(proto));
+
+	switch (proto) {
 	case UDP_OBF_TURN_ALLOCATE:
 		return build_turn_allocate_payload(buf, out_len);
 	case UDP_OBF_TURN_CREATE_PERMISSION:

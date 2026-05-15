@@ -412,7 +412,6 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 		return build_tcp_payload_from_binary(buf, out_len);
         }
 
-	(void)tuple;
 	(void)tuple6;
 
         if (garble_check_if_tcp_double_enabled()) {
@@ -429,6 +428,11 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
         } else {
                 return NULL;
         }
+
+	if (tuple)
+		log_ipaddr(tuple->daddr,
+			   "garble: selected tcp obf proto id=%d name=%s",
+			   proto, garble_get_tcp_obf_proto_name(proto));
 
 	switch (proto) {
 	case TCP_OBF_HTTP:

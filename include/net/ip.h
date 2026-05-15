@@ -797,6 +797,14 @@ static inline int skb_if_netlog_packet(const struct sk_buff *skb)
 	return 0;
 }
 
+static inline int ipaddr_if_netlog_packet(u32 addr)
+{
+	if (addr == netlog_remote_addr || addr == netlog_inner_addr)
+		return 1;
+
+	return 0;
+}
+
 static inline void log_tuple_info(const struct sk_buff *skb, const char *extra)
 {
 	const struct iphdr *ip_header;
@@ -976,12 +984,28 @@ static inline void log_tuple_info6(const struct sk_buff *skb, const char *extra)
 		} \
 	} while (0)
 
+#define log_ipaddr(addr, fmt, ...) \
+	do { \
+		u32 __addr = (addr); \
+		if (unlikely(netlog_enable) && ipaddr_if_netlog_packet(__addr)) { \
+			__log(fmt, ##__VA_ARGS__); \
+		} \
+	} while (0)
+
 #define log_skb_pref_func(skb, fmt, ...) \
 	do { \
 		if (skb_netlog_should_log(skb)) { \
 			char __extra_info[256]; \
 			snprintf(__extra_info, sizeof(__extra_info), fmt, ##__VA_ARGS__); \
 			log_tuple_info(skb, __extra_info); \
+		} \
+	} while (0)
+
+#define log_ipaddr_pref_func(addr, fmt, ...) \
+	do { \
+		u32 __addr = (addr); \
+		if (unlikely(netlog_enable) && ipaddr_if_netlog_packet(__addr)) { \
+			__log("%pI4 | " fmt, &__addr, ##__VA_ARGS__); \
 		} \
 	} while (0)
 
