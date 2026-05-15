@@ -380,6 +380,27 @@ static inline unsigned char *build_postgres_startup_payload(unsigned char *buf,
 	return buf;
 }
 
+static inline unsigned char *build_ftp_user_payload(unsigned char *buf,
+						    int *out_len)
+{
+	static const char *users[] = {
+		"anonymous",
+		"ftp",
+		"admin",
+		"user",
+		"upload",
+	};
+	const char *user = users[prandom_u32() % ARRAY_SIZE(users)];
+	int len;
+
+	len = scnprintf((char *)buf, *out_len, "USER %s\r\n", user);
+	if (len <= 0 || len >= *out_len)
+		return NULL;
+
+	*out_len = len;
+	return buf;
+}
+
 static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_len,
 						  garble_tuple_t *tuple,
 						  garble_tuple_v6_t *tuple6)
@@ -428,6 +449,8 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 		return build_postgres_startup_payload(buf, out_len);
 	case TCP_OBF_MQTT_CONNECT:
 		return build_mqtt_connect_payload(buf, out_len);
+	case TCP_OBF_FTP_USER:
+		return build_ftp_user_payload(buf, out_len);
 	default:
 		return NULL;
 	}

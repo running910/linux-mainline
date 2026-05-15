@@ -68,7 +68,7 @@ static int garble_tcp_binary_payload = 0;
 static int garble_udp_binary_payload = 0;
 static int garble_udp_ttl = 3;                          // Default TTL value for UDP packets
 static char garble_udp_obf_protos[UDP_OBF_PROTOS_BUF_LEN] = ""; // comma separated UDP obfuscation protos
-static char garble_tcp_obf_protos[TCP_OBF_PROTOS_BUF_LEN] = ""; // comma separated TCP obfuscation protos: http,tls,ssh,rtmp,postgres,mqtt
+static char garble_tcp_obf_protos[TCP_OBF_PROTOS_BUF_LEN] = ""; // comma separated TCP obfuscation protos: http,tls,ssh,rtmp,postgres,mqtt,ftp
 static int garble_tcp_ttl = 3;                          // Default TTL value for TCP packets
 static char garble_udp_extra[UDP_EXTRA_BUF_LEN] ={0};   // UDP extra configuration string
 
@@ -169,6 +169,7 @@ static const char * const garble_tcp_obf_proto_names[] = {
 	[TCP_OBF_RTMP_HANDSHAKE] = "rtmp_handshake",
 	[TCP_OBF_POSTGRES_STARTUP] = "postgres_startup",
 	[TCP_OBF_MQTT_CONNECT] = "mqtt_connect",
+	[TCP_OBF_FTP_USER] = "ftp_user",
 };
 
 static void garble_format_obf_proto_mask(char *buf, size_t size,
@@ -370,6 +371,8 @@ static int garble_tcp_obf_proto_from_token(const char *token)
 		return TCP_OBF_POSTGRES_STARTUP;
 	if (!strcmp(token, "mqtt") || !strcmp(token, "mqtt_connect"))
 		return TCP_OBF_MQTT_CONNECT;
+	if (!strcmp(token, "ftp") || !strcmp(token, "ftp_user"))
+		return TCP_OBF_FTP_USER;
 
 	if (!kstrtoint(token, 0, &proto) && proto >= 0 &&
 	    proto < TCP_OBF_PROTO_MAX)
