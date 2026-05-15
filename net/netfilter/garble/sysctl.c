@@ -18,6 +18,7 @@
 #define DOMAINS_BUF_LEN 1048576
 #define MAX_DOMAINS     131072
 #define UDP_EXTRA_BUF_LEN 512
+#define UDP_OBF_PROTOS_BUF_LEN 256
 #define TCP_OBF_PROTOS_BUF_LEN 256
 #define LAN_NICS_BUF_LEN 512
 #define MAX_LAN_NICS    20
@@ -34,6 +35,12 @@ struct garble_lan_config {
 	char *lan_list[MAX_LAN_NICS];            // 网卡列表
 	int num_lans;                           // 网卡数量
 	struct rcu_head rcu;                    // RCU删除钩子
+};
+
+struct garble_udp_obf_config {
+	char proto_buf[UDP_OBF_PROTOS_BUF_LEN];
+	unsigned long mask;
+	struct rcu_head rcu;
 };
 
 struct garble_tcp_obf_config {
@@ -60,17 +67,19 @@ static int garble_routing_enabled = 0;
 static int garble_tcp_binary_payload = 0;
 static int garble_udp_binary_payload = 0;
 static int garble_udp_ttl = 3;                          // Default TTL value for UDP packets
-static int garble_udp_obf_proto = 0;                    // UDP obfuscation proto: 0=turn allocate request, 1=wechat live video, 2=sip invite, 3=dtls client hello, 4=turn create permission, 5=turn allocate error response, 6=turn channel bind, 7=tftp rrq, 8=wechat video new, 9=xiaomi camera, 10=bilibili live
+static char garble_udp_obf_protos[UDP_OBF_PROTOS_BUF_LEN] = ""; // comma separated UDP obfuscation protos
 static char garble_tcp_obf_protos[TCP_OBF_PROTOS_BUF_LEN] = ""; // comma separated TCP obfuscation protos: http,tls,ssh,rtmp,postgres,mqtt
 static int garble_tcp_ttl = 3;                          // Default TTL value for TCP packets
 static char garble_udp_extra[UDP_EXTRA_BUF_LEN] ={0};   // UDP extra configuration string
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
 static struct garble_lan_config __rcu *garble_lan_cfg_ptr = NULL;
+static struct garble_udp_obf_config __rcu *garble_udp_obf_cfg_ptr = NULL;
 static struct garble_tcp_obf_config __rcu *garble_tcp_obf_cfg_ptr = NULL;
 
 static DEFINE_SPINLOCK(garble_cfg_lock);
 static DEFINE_SPINLOCK(garble_lan_cfg_lock);
+static DEFINE_SPINLOCK(garble_udp_obf_cfg_lock);
 static DEFINE_SPINLOCK(garble_tcp_obf_cfg_lock);
 
 static struct {
@@ -123,6 +132,14 @@ static void garble_lan_config_free(struct rcu_head *head)
 	kfree(cfg);
 }
 
+static void garble_udp_obf_config_free(struct rcu_head *head)
+{
+	struct garble_udp_obf_config *cfg =
+		container_of(head, struct garble_udp_obf_config, rcu);
+
+	kfree(cfg);
+}
+
 static void garble_tcp_obf_config_free(struct rcu_head *head)
 {
 	struct garble_tcp_obf_config *cfg =
@@ -164,35 +181,118 @@ static int proc_handler_ttl(struct ctl_table *table, int write,
 	return 0;
 }
 
+static int garble_udp_obf_proto_from_token(const char *token)
+{
+	int proto;
+
+	if (!strcmp(token, "turn") || !strcmp(token, "turn_allocate"))
+		return UDP_OBF_TURN_ALLOCATE;
+	if (!strcmp(token, "wechat") || !strcmp(token, "wechat_video"))
+		return UDP_OBF_WECHAT_VIDEO;
+	if (!strcmp(token, "sip") || !strcmp(token, "sip_invite"))
+		return UDP_OBF_SIP_INVITE;
+	if (!strcmp(token, "dtls") || !strcmp(token, "dtls_clienthello"))
+		return UDP_OBF_DTLS_CLIENTHELLO;
+	if (!strcmp(token, "turn_create_permission"))
+		return UDP_OBF_TURN_CREATE_PERMISSION;
+	if (!strcmp(token, "turn_allocate_error_response"))
+		return UDP_OBF_TURN_ALLOCATE_ERROR_RESPONSE;
+	if (!strcmp(token, "turn_channel_bind"))
+		return UDP_OBF_TURN_CHANNEL_BIND;
+	if (!strcmp(token, "tftp") || !strcmp(token, "tftp_rrq"))
+		return UDP_OBF_TFTP_RRQ;
+	if (!strcmp(token, "wechat_video_new"))
+		return UDP_OBF_WECHAT_VIDEO_NEW;
+	if (!strcmp(token, "xiaomi") || !strcmp(token, "xiaomi_camera"))
+		return UDP_OBF_XIAOMI_CAMERA;
+	if (!strcmp(token, "bilibili") || !strcmp(token, "bilibili_live"))
+		return UDP_OBF_BILIBILI_LIVE;
+
+	if (!kstrtoint(token, 0, &proto) && proto >= 0 &&
+	    proto < UDP_OBF_PROTO_MAX)
+		return proto;
+
+	return -EINVAL;
+}
+
+static struct garble_udp_obf_config *garble_parse_udp_obf_protos(const char *src)
+{
+	struct garble_udp_obf_config *cfg;
+	char *token;
+	char *s;
+	int proto;
+
+	if (!src)
+		return NULL;
+
+	cfg = kzalloc(sizeof(*cfg), GFP_KERNEL);
+	if (!cfg)
+		return NULL;
+
+	if (strscpy(cfg->proto_buf, src, sizeof(cfg->proto_buf)) < 0) {
+		kfree(cfg);
+		return NULL;
+	}
+
+	s = cfg->proto_buf;
+	while ((token = strsep(&s, ",")) != NULL) {
+		token = strim(token);
+		if (*token == '\0')
+			continue;
+
+		proto = garble_udp_obf_proto_from_token(token);
+		if (proto < 0) {
+			kfree(cfg);
+			return NULL;
+		}
+
+		cfg->mask |= BIT(proto);
+	}
+
+	return cfg;
+}
+
 static int proc_handler_udp_obf_proto(struct ctl_table *table, int write,
 				    void __user *buffer, size_t *lenp, loff_t *ppos)
 {
-	int ret;
-	int new_obf_pro;
+	char tmp[UDP_OBF_PROTOS_BUF_LEN];
+	struct garble_udp_obf_config *new_cfg;
+	struct garble_udp_obf_config *old_cfg;
 	struct ctl_table tmp_table;
+	unsigned long flags;
+	int ret;
 
-	if (!write) {
-		return proc_dointvec(table, write, buffer, lenp, ppos);
-	}
+	if (!write)
+		return proc_dostring(table, write, buffer, lenp, ppos);
 
-	memset(&tmp_table, 0, sizeof(tmp_table));
-	tmp_table.data = &new_obf_pro;
-	tmp_table.maxlen = sizeof(int);
+	strscpy(tmp, (char *)table->data, sizeof(tmp));
+	tmp_table = *table;
+	tmp_table.data = tmp;
+	tmp_table.maxlen = sizeof(tmp);
 
-	ret = proc_dointvec(&tmp_table, write, buffer, lenp, ppos);
-	if (ret != 0) {
+	ret = proc_dostring(&tmp_table, write, buffer, lenp, ppos);
+	if (ret != 0)
 		return ret;
-	}
 
-	/* Validate obfuscation proto range [0, UDP_OBF_PROTO_MAX - 1] */
-	if (new_obf_pro < 0 || new_obf_pro >= UDP_OBF_PROTO_MAX) {
-		pr_info("garble: UDP obfuscation proto value %d is out of range [0, %d]\n", new_obf_pro, UDP_OBF_PROTO_MAX - 1);
+	new_cfg = garble_parse_udp_obf_protos(tmp);
+	if (!new_cfg) {
+		pr_info("garble: invalid udp_obf_proto value: %s\n", tmp);
 		return -EINVAL;
 	}
 
-	/* Update the actual obfuscation profile value */
-	*(int *)table->data = new_obf_pro;
-	pr_info("garble: UDP obfuscation proto updated to %d\n", new_obf_pro);
+	strscpy((char *)table->data, tmp, table->maxlen);
+
+	spin_lock_irqsave(&garble_udp_obf_cfg_lock, flags);
+	old_cfg = rcu_dereference_protected(garble_udp_obf_cfg_ptr,
+			lockdep_is_held(&garble_udp_obf_cfg_lock));
+	rcu_assign_pointer(garble_udp_obf_cfg_ptr, new_cfg);
+	spin_unlock_irqrestore(&garble_udp_obf_cfg_lock, flags);
+
+	if (old_cfg)
+		call_rcu(&old_cfg->rcu, garble_udp_obf_config_free);
+
+	pr_info("garble: udp_obf_proto updated to %s\n",
+		new_cfg->mask ? tmp : "(disabled)");
 
 	return 0;
 }
@@ -282,7 +382,7 @@ static int proc_handler_tcp_obf_protos(struct ctl_table *table, int write,
 
 	new_cfg = garble_parse_tcp_obf_protos(tmp);
 	if (!new_cfg) {
-		pr_info("garble: invalid tcp_obf_protos value: %s\n",
+		pr_info("garble: invalid tcp_obf_proto value: %s\n",
 			tmp);
 		return -EINVAL;
 	}
@@ -298,7 +398,7 @@ static int proc_handler_tcp_obf_protos(struct ctl_table *table, int write,
 	if (old_cfg)
 		call_rcu(&old_cfg->rcu, garble_tcp_obf_config_free);
 
-	pr_info("garble: tcp_obf_protos updated to %s\n",
+	pr_info("garble: tcp_obf_proto updated to %s\n",
 		new_cfg->mask ? tmp : "(disabled)");
 
 	return 0;
@@ -654,8 +754,8 @@ static struct ctl_table garble_table[] = {
 	},
 	{
 		.procname	= "udp_obf_proto",
-		.data		= &garble_udp_obf_proto,
-		.maxlen		= sizeof(int),
+		.data		= garble_udp_obf_protos,
+		.maxlen		= UDP_OBF_PROTOS_BUF_LEN,
 		.mode		= 0644,
 		.proc_handler	= proc_handler_udp_obf_proto,
 	},
@@ -837,6 +937,7 @@ static const struct file_operations garble_stats_proc_ops = {
 int garble_sysctl_init(void)
 {
 	struct garble_lan_config *default_lan_cfg;
+	struct garble_udp_obf_config *default_udp_obf_cfg;
 	struct garble_tcp_obf_config *default_tcp_obf_cfg;
 	unsigned long flags;
 
@@ -884,15 +985,26 @@ int garble_sysctl_init(void)
 	if (!default_lan_cfg)
 		return -ENOMEM;
 
+	default_udp_obf_cfg = garble_parse_udp_obf_protos(garble_udp_obf_protos);
+	if (!default_udp_obf_cfg) {
+		kfree(default_lan_cfg);
+		return -ENOMEM;
+	}
+
 	default_tcp_obf_cfg = garble_parse_tcp_obf_protos(garble_tcp_obf_protos);
 	if (!default_tcp_obf_cfg) {
 		kfree(default_lan_cfg);
+		kfree(default_udp_obf_cfg);
 		return -ENOMEM;
 	}
 
 	spin_lock_irqsave(&garble_lan_cfg_lock, flags);
 	rcu_assign_pointer(garble_lan_cfg_ptr, default_lan_cfg);
 	spin_unlock_irqrestore(&garble_lan_cfg_lock, flags);
+
+	spin_lock_irqsave(&garble_udp_obf_cfg_lock, flags);
+	rcu_assign_pointer(garble_udp_obf_cfg_ptr, default_udp_obf_cfg);
+	spin_unlock_irqrestore(&garble_udp_obf_cfg_lock, flags);
 
 	spin_lock_irqsave(&garble_tcp_obf_cfg_lock, flags);
 	rcu_assign_pointer(garble_tcp_obf_cfg_ptr, default_tcp_obf_cfg);
@@ -905,6 +1017,7 @@ void garble_sysctl_exit(void)
 {
 	struct garble_config *cfg;
 	struct garble_lan_config *lan_cfg;
+	struct garble_udp_obf_config *udp_obf_cfg;
 	struct garble_tcp_obf_config *tcp_obf_cfg;
 	unsigned long flags;
 
@@ -936,6 +1049,15 @@ void garble_sysctl_exit(void)
 
 	if (lan_cfg)
 		call_rcu(&lan_cfg->rcu, garble_lan_config_free);
+
+	spin_lock_irqsave(&garble_udp_obf_cfg_lock, flags);
+	udp_obf_cfg = rcu_dereference_protected(garble_udp_obf_cfg_ptr,
+					    lockdep_is_held(&garble_udp_obf_cfg_lock));
+	rcu_assign_pointer(garble_udp_obf_cfg_ptr, NULL);
+	spin_unlock_irqrestore(&garble_udp_obf_cfg_lock, flags);
+
+	if (udp_obf_cfg)
+		call_rcu(&udp_obf_cfg->rcu, garble_udp_obf_config_free);
 
 	spin_lock_irqsave(&garble_tcp_obf_cfg_lock, flags);
 	tcp_obf_cfg = rcu_dereference_protected(garble_tcp_obf_cfg_ptr,
@@ -1066,7 +1188,38 @@ inline int garble_get_udp_ttl(void)
 
 inline int garble_get_udp_obf_proto(void)
 {
-	return garble_udp_obf_proto;
+	struct garble_udp_obf_config *cfg;
+	unsigned long mask;
+	int count = 0;
+	int target;
+	int i;
+
+	rcu_read_lock();
+	cfg = rcu_dereference(garble_udp_obf_cfg_ptr);
+	mask = cfg ? cfg->mask : 0;
+
+	for (i = 0; i < UDP_OBF_PROTO_MAX; i++) {
+		if (mask & BIT(i))
+			count++;
+	}
+
+	if (!count) {
+		rcu_read_unlock();
+		return UDP_OBF_PROTO_MAX;
+	}
+
+	target = prandom_u32() % count;
+	for (i = 0; i < UDP_OBF_PROTO_MAX; i++) {
+		if (!(mask & BIT(i)))
+			continue;
+		if (target-- == 0) {
+			rcu_read_unlock();
+			return i;
+		}
+	}
+
+	rcu_read_unlock();
+	return UDP_OBF_PROTO_MAX;
 }
 
 inline int garble_get_tcp_obf_proto(void)
