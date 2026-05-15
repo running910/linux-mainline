@@ -148,6 +148,58 @@ static void garble_tcp_obf_config_free(struct rcu_head *head)
 	kfree(cfg);
 }
 
+static const char * const garble_udp_obf_proto_names[] = {
+	[UDP_OBF_TURN_ALLOCATE] = "turn_allocate",
+	[UDP_OBF_WECHAT_VIDEO] = "wechat_video",
+	[UDP_OBF_SIP_INVITE] = "sip_invite",
+	[UDP_OBF_DTLS_CLIENTHELLO] = "dtls_clienthello",
+	[UDP_OBF_TURN_CREATE_PERMISSION] = "turn_create_permission",
+	[UDP_OBF_TURN_ALLOCATE_ERROR_RESPONSE] = "turn_allocate_error_response",
+	[UDP_OBF_TURN_CHANNEL_BIND] = "turn_channel_bind",
+	[UDP_OBF_TFTP_RRQ] = "tftp_rrq",
+	[UDP_OBF_WECHAT_VIDEO_NEW] = "wechat_video_new",
+	[UDP_OBF_XIAOMI_CAMERA] = "xiaomi_camera",
+	[UDP_OBF_BILIBILI_LIVE] = "bilibili_live",
+};
+
+static const char * const garble_tcp_obf_proto_names[] = {
+	[TCP_OBF_HTTP] = "http",
+	[TCP_OBF_TLS_CLIENTHELLO] = "tls_clienthello",
+	[TCP_OBF_SSH_BANNER] = "ssh_banner",
+	[TCP_OBF_RTMP_HANDSHAKE] = "rtmp_handshake",
+	[TCP_OBF_POSTGRES_STARTUP] = "postgres_startup",
+	[TCP_OBF_MQTT_CONNECT] = "mqtt_connect",
+};
+
+static void garble_format_obf_proto_mask(char *buf, size_t size,
+					 unsigned long mask,
+					 const char * const *names,
+					 int proto_max)
+{
+	size_t pos = 0;
+	int i;
+
+	if (!size)
+		return;
+
+	if (!mask) {
+		scnprintf(buf, size, "(disabled)");
+		return;
+	}
+
+	buf[0] = '\0';
+	for (i = 0; i < proto_max; i++) {
+		if (!(mask & BIT(i)))
+			continue;
+
+		pos += scnprintf(buf + pos, size - pos, "%s%s(%d)",
+				 pos ? "," : "",
+				 names[i] ? names[i] : "unknown", i);
+		if (pos >= size)
+			break;
+	}
+}
+
 static int proc_handler_ttl(struct ctl_table *table, int write,
 				void __user *buffer, size_t *lenp, loff_t *ppos)
 {
@@ -256,6 +308,7 @@ static int proc_handler_udp_obf_proto(struct ctl_table *table, int write,
 				    void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	char tmp[UDP_OBF_PROTOS_BUF_LEN];
+	char proto_list[256];
 	struct garble_udp_obf_config *new_cfg;
 	struct garble_udp_obf_config *old_cfg;
 	struct ctl_table tmp_table;
@@ -291,8 +344,12 @@ static int proc_handler_udp_obf_proto(struct ctl_table *table, int write,
 	if (old_cfg)
 		call_rcu(&old_cfg->rcu, garble_udp_obf_config_free);
 
-	pr_info("garble: udp_obf_proto updated to %s\n",
-		new_cfg->mask ? tmp : "(disabled)");
+	garble_format_obf_proto_mask(proto_list, sizeof(proto_list),
+				     new_cfg->mask,
+				     garble_udp_obf_proto_names,
+				     UDP_OBF_PROTO_MAX);
+	pr_info("garble: udp_obf_proto updated to %s [%s]\n",
+		new_cfg->mask ? tmp : "(disabled)", proto_list);
 
 	return 0;
 }
@@ -362,6 +419,7 @@ static int proc_handler_tcp_obf_protos(struct ctl_table *table, int write,
 				    void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	char tmp[TCP_OBF_PROTOS_BUF_LEN];
+	char proto_list[256];
 	struct ctl_table tmp_table;
 	struct garble_tcp_obf_config *new_cfg;
 	struct garble_tcp_obf_config *old_cfg;
@@ -398,8 +456,12 @@ static int proc_handler_tcp_obf_protos(struct ctl_table *table, int write,
 	if (old_cfg)
 		call_rcu(&old_cfg->rcu, garble_tcp_obf_config_free);
 
-	pr_info("garble: tcp_obf_proto updated to %s\n",
-		new_cfg->mask ? tmp : "(disabled)");
+	garble_format_obf_proto_mask(proto_list, sizeof(proto_list),
+				     new_cfg->mask,
+				     garble_tcp_obf_proto_names,
+				     TCP_OBF_PROTO_MAX);
+	pr_info("garble: tcp_obf_proto updated to %s [%s]\n",
+		new_cfg->mask ? tmp : "(disabled)", proto_list);
 
 	return 0;
 }
