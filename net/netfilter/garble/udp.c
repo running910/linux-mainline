@@ -308,6 +308,11 @@ inline unsigned char *build_payload_from_binary(unsigned char *buf, int *out_len
 	return buf;
 }
 
+inline unsigned char *build_payload_from_file(unsigned char *buf, int *out_len)
+{
+	return garble_get_udp_payload_file(buf, out_len);
+}
+
 inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
 					garble_tuple_t *tuple,
 					garble_tuple_v6_t *tuple6)
@@ -346,6 +351,8 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
 		return build_sip_payload(buf, out_len);
 	case UDP_OBF_DTLS_CLIENTHELLO:
 		return build_dtls_client_hello(buf, out_len, garble_get_random_domain());
+	case UDP_OBF_PAYLOAD_FILE:
+		return build_payload_from_file(buf, out_len);
 	default:
 		return NULL;
 	}
