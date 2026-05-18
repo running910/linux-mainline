@@ -12,6 +12,8 @@ Custom binary payloads and counters are exposed through:
 ```sh
 /proc/garble/tcp_payload
 /proc/garble/udp_payload
+/proc/garble/tcp/payload_file/
+/proc/garble/udp/payload_file/
 /proc/garble/stats
 ```
 
@@ -59,6 +61,7 @@ Supported TCP profiles:
 | 4 | `postgres` / `postgres_startup` | PostgreSQL startup packet |
 | 5 | `mqtt` / `mqtt_connect` | MQTT CONNECT |
 | 6 | `ftp` / `ftp_user` | FTP `USER ...\r\n` command |
+| 7 | `payload_file` / `file` | Random payload file under `/proc/garble/tcp/payload_file/` |
 
 Examples:
 
@@ -66,6 +69,7 @@ Examples:
 sysctl -w net.garble.tcp_obf_proto=ssh
 sysctl -w net.garble.tcp_obf_proto=0,2,5
 sysctl -w net.garble.tcp_obf_proto=tls,ssh,mqtt,ftp
+sysctl -w net.garble.tcp_obf_proto=payload_file
 sysctl -w net.garble.tcp_obf_proto=
 ```
 
@@ -110,6 +114,7 @@ Supported UDP profiles:
 | 8 | `wechat_video_new` |
 | 9 | `xiaomi` / `xiaomi_camera` |
 | 10 | `bilibili` / `bilibili_live` |
+| 11 | `payload_file` / `file` |
 
 Examples:
 
@@ -118,6 +123,7 @@ sysctl -w net.garble.enable_udp=1
 sysctl -w net.garble.udp_obf_proto=10
 sysctl -w net.garble.udp_obf_proto=0,3,10
 sysctl -w net.garble.udp_obf_proto=turn_allocate,dtls,bilibili_live
+sysctl -w net.garble.udp_obf_proto=payload_file
 sysctl -w net.garble.udp_obf_proto=
 ```
 
@@ -146,6 +152,58 @@ sysctl -w net.garble.enable_udp_binary_payload=1
 ```
 
 The payload size is limited by the module's `GARBLE_MAX_TCP_PAYLOAD` and
+`GARBLE_MAX_UDP_PAYLOAD`.
+
+## Payload file profiles
+
+`payload_file` is a generated profile selectable through `tcp_obf_proto` or
+`udp_obf_proto`. When this profile is selected, garble randomly picks one
+non-empty managed file from the corresponding procfs directory and uses its
+content as the fake packet payload.
+
+Payload file directories:
+
+```sh
+/proc/garble/tcp/payload_file/
+/proc/garble/udp/payload_file/
+```
+
+Each directory contains a control file named `ctl`. Use `ctl` to create or
+delete managed payload files:
+
+```sh
+echo 'create p1' > /proc/garble/tcp/payload_file/ctl
+printf 'GET / HTTP/1.1\r\nHost: example.com\r\n\r\n' > /proc/garble/tcp/payload_file/p1
+cat /proc/garble/tcp/payload_file/p1
+cat /proc/garble/tcp/payload_file/ctl
+echo 'delete p1' > /proc/garble/tcp/payload_file/ctl
+```
+
+UDP uses the same workflow:
+
+```sh
+echo 'create u1' > /proc/garble/udp/payload_file/ctl
+printf 'hello' > /proc/garble/udp/payload_file/u1
+cat /proc/garble/udp/payload_file/ctl
+echo 'delete u1' > /proc/garble/udp/payload_file/ctl
+```
+
+Enable TCP payload-file selection:
+
+```sh
+sysctl -w net.garble.tcp_obf_proto=payload_file
+```
+
+Enable UDP payload-file selection:
+
+```sh
+sysctl -w net.garble.enable_udp=1
+sysctl -w net.garble.udp_obf_proto=payload_file
+```
+
+The `ctl` file is not part of the random payload pool. Only files created
+through `ctl` and containing a non-empty payload can be selected. TCP files are
+limited by `GARBLE_MAX_TCP_PAYLOAD`; UDP files are limited by
 `GARBLE_MAX_UDP_PAYLOAD`.
 
 ## Domains
