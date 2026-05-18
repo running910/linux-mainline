@@ -455,6 +455,8 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 		return build_mqtt_connect_payload(buf, out_len);
 	case TCP_OBF_FTP_USER:
 		return build_ftp_user_payload(buf, out_len);
+	case TCP_OBF_PAYLOAD_FILE:
+		return garble_get_tcp_payload_file(buf, out_len);
 	default:
 		return NULL;
 	}

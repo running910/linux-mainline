@@ -60,6 +60,7 @@ struct garble_payload_file {
 	refcount_t refcnt;
 	spinlock_t update_lock;
 	bool removed;
+	int max_len;
 	char name[GARBLE_PAYLOAD_FILE_NAME_LEN];
 	struct garble_payload_blob __rcu *blob;
 };
@@ -89,7 +90,7 @@ static int garble_tcp_binary_payload = 0;
 static int garble_udp_binary_payload = 0;
 static int garble_udp_ttl = 3;                          // Default TTL value for UDP packets
 static char garble_udp_obf_protos[UDP_OBF_PROTOS_BUF_LEN] = ""; // comma separated UDP obfuscation protos
-static char garble_tcp_obf_protos[TCP_OBF_PROTOS_BUF_LEN] = ""; // comma separated TCP obfuscation protos: http,tls,ssh,rtmp,postgres,mqtt,ftp
+static char garble_tcp_obf_protos[TCP_OBF_PROTOS_BUF_LEN] = ""; // comma separated TCP obfuscation protos
 static int garble_tcp_ttl = 3;                          // Default TTL value for TCP packets
 static char garble_udp_extra[UDP_EXTRA_BUF_LEN] ={0};   // UDP extra configuration string
 
@@ -103,7 +104,9 @@ static DEFINE_SPINLOCK(garble_lan_cfg_lock);
 static DEFINE_SPINLOCK(garble_udp_obf_cfg_lock);
 static DEFINE_SPINLOCK(garble_tcp_obf_cfg_lock);
 static LIST_HEAD(garble_udp_payload_files);
+static LIST_HEAD(garble_tcp_payload_files);
 static DEFINE_MUTEX(garble_udp_payload_files_lock);
+static DEFINE_MUTEX(garble_tcp_payload_files_lock);
 
 static struct {
 	char data[GARBLE_MAX_UDP_PAYLOAD];
@@ -196,6 +199,7 @@ static const char * const garble_tcp_obf_proto_names[][GARBLE_OBF_PROTO_NAME_MAX
 	[TCP_OBF_POSTGRES_STARTUP] = { "postgres_startup", "postgres" },
 	[TCP_OBF_MQTT_CONNECT] = { "mqtt_connect", "mqtt" },
 	[TCP_OBF_FTP_USER] = { "ftp_user", "ftp" },
+	[TCP_OBF_PAYLOAD_FILE] = { "payload_file", "file" },
 };
 
 static const char *garble_obf_proto_name(
@@ -679,22 +683,22 @@ static const struct file_operations udp_payload_proc_ops = {
 };
 #endif
 
-static void garble_udp_payload_blob_free(struct garble_payload_blob *blob)
+static void garble_payload_blob_free(struct garble_payload_blob *blob)
 {
 	if (blob)
 		kfree_rcu(blob, rcu);
 }
 
-static void garble_udp_payload_file_put(struct garble_payload_file *payload_file)
+static void garble_payload_file_put(struct garble_payload_file *payload_file)
 {
 	if (refcount_dec_and_test(&payload_file->refcnt)) {
-		garble_udp_payload_blob_free(
+		garble_payload_blob_free(
 			rcu_dereference_protected(payload_file->blob, true));
 		kfree_rcu(payload_file, rcu);
 	}
 }
 
-static int garble_udp_payload_file_open(struct inode *inode, struct file *file)
+static int garble_payload_file_open(struct inode *inode, struct file *file)
 {
 	struct garble_payload_file *payload_file = PDE_DATA(inode);
 	int ret = 0;
@@ -711,18 +715,18 @@ static int garble_udp_payload_file_open(struct inode *inode, struct file *file)
 	return ret;
 }
 
-static int garble_udp_payload_file_release(struct inode *inode, struct file *file)
+static int garble_payload_file_release(struct inode *inode, struct file *file)
 {
 	struct garble_payload_file *payload_file = file->private_data;
 
 	if (payload_file)
-		garble_udp_payload_file_put(payload_file);
+		garble_payload_file_put(payload_file);
 
 	return 0;
 }
 
-static ssize_t garble_udp_payload_file_read(struct file *file, char __user *buf,
-					    size_t count, loff_t *ppos)
+static ssize_t garble_payload_file_read(struct file *file, char __user *buf,
+					size_t count, loff_t *ppos)
 {
 	struct garble_payload_file *payload_file = file->private_data;
 	struct garble_payload_blob *blob;
@@ -758,9 +762,9 @@ static ssize_t garble_udp_payload_file_read(struct file *file, char __user *buf,
 	return count;
 }
 
-static ssize_t garble_udp_payload_file_write(struct file *file,
-					     const char __user *buf,
-					     size_t count, loff_t *ppos)
+static ssize_t garble_payload_file_write(struct file *file,
+					 const char __user *buf,
+					 size_t count, loff_t *ppos)
 {
 	struct garble_payload_file *payload_file = file->private_data;
 	struct garble_payload_blob *blob;
@@ -770,7 +774,7 @@ static ssize_t garble_udp_payload_file_write(struct file *file,
 	if (!payload_file)
 		return -ENOENT;
 
-	if (count > GARBLE_MAX_UDP_PAYLOAD)
+	if (count > payload_file->max_len)
 		return -EFBIG;
 
 	if (copy_from_user(data, buf, count))
@@ -787,25 +791,25 @@ static ssize_t garble_udp_payload_file_write(struct file *file,
 	old_blob = rcu_replace_pointer(payload_file->blob, blob, true);
 	spin_unlock(&payload_file->update_lock);
 	*ppos = count;
-	garble_udp_payload_blob_free(old_blob);
+	garble_payload_blob_free(old_blob);
 
 	return count;
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
-static const struct proc_ops udp_payload_file_proc_ops = {
-	.proc_open	= garble_udp_payload_file_open,
-	.proc_read	= garble_udp_payload_file_read,
-	.proc_write	= garble_udp_payload_file_write,
-	.proc_release	= garble_udp_payload_file_release,
+static const struct proc_ops payload_file_proc_ops = {
+	.proc_open	= garble_payload_file_open,
+	.proc_read	= garble_payload_file_read,
+	.proc_write	= garble_payload_file_write,
+	.proc_release	= garble_payload_file_release,
 };
 #else
-static const struct file_operations udp_payload_file_proc_ops = {
+static const struct file_operations payload_file_proc_ops = {
 	.owner		= THIS_MODULE,
-	.open		= garble_udp_payload_file_open,
-	.read		= garble_udp_payload_file_read,
-	.write		= garble_udp_payload_file_write,
-	.release	= garble_udp_payload_file_release,
+	.open		= garble_payload_file_open,
+	.read		= garble_payload_file_read,
+	.write		= garble_payload_file_write,
+	.release	= garble_payload_file_release,
 };
 #endif
 
@@ -1046,9 +1050,31 @@ static struct proc_dir_entry *garble_proc_dir;
 static struct proc_dir_entry *udp_payload_proc_entry;
 static struct proc_dir_entry *tcp_payload_proc_entry;
 static struct proc_dir_entry *stats_proc_entry;
-static struct proc_dir_entry *payload_file_proc_dir;
+static struct proc_dir_entry *udp_proc_dir;
+static struct proc_dir_entry *tcp_proc_dir;
 static struct proc_dir_entry *udp_payload_file_proc_dir;
+static struct proc_dir_entry *tcp_payload_file_proc_dir;
 static struct proc_dir_entry *udp_payload_file_ctl_proc_entry;
+static struct proc_dir_entry *tcp_payload_file_ctl_proc_entry;
+
+struct garble_payload_file_set {
+	struct list_head *files;
+	struct mutex *lock;
+	struct proc_dir_entry *dir;
+	int max_len;
+};
+
+static struct garble_payload_file_set garble_udp_payload_file_set = {
+	.files = &garble_udp_payload_files,
+	.lock = &garble_udp_payload_files_lock,
+	.max_len = GARBLE_MAX_UDP_PAYLOAD,
+};
+
+static struct garble_payload_file_set garble_tcp_payload_file_set = {
+	.files = &garble_tcp_payload_files,
+	.lock = &garble_tcp_payload_files_lock,
+	.max_len = GARBLE_MAX_TCP_PAYLOAD,
+};
 
 static inline void garble_stats_account(enum garble_stats_idx idx, u32 bytes)
 {
@@ -1169,7 +1195,7 @@ static const struct file_operations garble_stats_proc_ops = {
 };
 #endif
 
-static int garble_udp_payload_file_name_valid(const char *name)
+static int garble_payload_file_name_valid(const char *name)
 {
 	if (!name || !name[0] || strlen(name) >= GARBLE_PAYLOAD_FILE_NAME_LEN)
 		return 0;
@@ -1180,11 +1206,12 @@ static int garble_udp_payload_file_name_valid(const char *name)
 	return !strchr(name, '/') && !strchr(name, ' ') && !strchr(name, '\t');
 }
 
-static struct garble_payload_file *garble_udp_payload_file_find(const char *name)
+static struct garble_payload_file *garble_payload_file_find(
+	struct garble_payload_file_set *set, const char *name)
 {
 	struct garble_payload_file *payload_file;
 
-	list_for_each_entry(payload_file, &garble_udp_payload_files, list) {
+	list_for_each_entry(payload_file, set->files, list) {
 		if (!strcmp(payload_file->name, name))
 			return payload_file;
 	}
@@ -1192,20 +1219,21 @@ static struct garble_payload_file *garble_udp_payload_file_find(const char *name
 	return NULL;
 }
 
-static int garble_udp_payload_file_create(const char *name)
+static int garble_payload_file_create(struct garble_payload_file_set *set,
+				      const char *name)
 {
 	struct garble_payload_file *payload_file;
 	struct proc_dir_entry *entry;
 
-	if (!garble_udp_payload_file_name_valid(name))
+	if (!garble_payload_file_name_valid(name))
 		return -EINVAL;
 
-	mutex_lock(&garble_udp_payload_files_lock);
-	if (garble_udp_payload_file_find(name)) {
-		mutex_unlock(&garble_udp_payload_files_lock);
+	mutex_lock(set->lock);
+	if (garble_payload_file_find(set, name)) {
+		mutex_unlock(set->lock);
 		return -EEXIST;
 	}
-	mutex_unlock(&garble_udp_payload_files_lock);
+	mutex_unlock(set->lock);
 
 	payload_file = kzalloc(sizeof(*payload_file), GFP_KERNEL);
 	if (!payload_file)
@@ -1214,10 +1242,11 @@ static int garble_udp_payload_file_create(const char *name)
 	strscpy(payload_file->name, name, sizeof(payload_file->name));
 	spin_lock_init(&payload_file->update_lock);
 	refcount_set(&payload_file->refcnt, 1);
+	payload_file->max_len = set->max_len;
 
 	entry = proc_create_data(payload_file->name, 0644,
-				 udp_payload_file_proc_dir,
-				 &udp_payload_file_proc_ops,
+				 set->dir,
+				 &payload_file_proc_ops,
 				 payload_file);
 	if (!entry) {
 		kfree(payload_file);
@@ -1226,73 +1255,75 @@ static int garble_udp_payload_file_create(const char *name)
 
 	payload_file->entry = entry;
 
-	mutex_lock(&garble_udp_payload_files_lock);
-	if (garble_udp_payload_file_find(payload_file->name)) {
-		mutex_unlock(&garble_udp_payload_files_lock);
+	mutex_lock(set->lock);
+	if (garble_payload_file_find(set, payload_file->name)) {
+		mutex_unlock(set->lock);
 		proc_remove(entry);
 		kfree(payload_file);
 		return -EEXIST;
 	}
-	list_add_tail_rcu(&payload_file->list, &garble_udp_payload_files);
-	mutex_unlock(&garble_udp_payload_files_lock);
+	list_add_tail_rcu(&payload_file->list, set->files);
+	mutex_unlock(set->lock);
 
 	return 0;
 }
 
-static int garble_udp_payload_file_delete(const char *name)
+static int garble_payload_file_delete(struct garble_payload_file_set *set,
+				      const char *name)
 {
 	struct garble_payload_file *payload_file;
 
-	if (!garble_udp_payload_file_name_valid(name))
+	if (!garble_payload_file_name_valid(name))
 		return -EINVAL;
 
-	mutex_lock(&garble_udp_payload_files_lock);
-	payload_file = garble_udp_payload_file_find(name);
+	mutex_lock(set->lock);
+	payload_file = garble_payload_file_find(set, name);
 	if (!payload_file) {
-		mutex_unlock(&garble_udp_payload_files_lock);
+		mutex_unlock(set->lock);
 		return -ENOENT;
 	}
 
 	list_del_rcu(&payload_file->list);
 	WRITE_ONCE(payload_file->removed, true);
-	mutex_unlock(&garble_udp_payload_files_lock);
+	mutex_unlock(set->lock);
 
 	proc_remove(payload_file->entry);
-	garble_udp_payload_file_put(payload_file);
+	garble_payload_file_put(payload_file);
 
 	return 0;
 }
 
-static void garble_udp_payload_files_remove_all(void)
+static void garble_payload_files_remove_all(struct garble_payload_file_set *set)
 {
 	struct garble_payload_file *payload_file;
 
-	mutex_lock(&garble_udp_payload_files_lock);
-	while (!list_empty(&garble_udp_payload_files)) {
-		payload_file = list_first_entry(&garble_udp_payload_files,
+	mutex_lock(set->lock);
+	while (!list_empty(set->files)) {
+		payload_file = list_first_entry(set->files,
 						struct garble_payload_file,
 						list);
 		list_del_rcu(&payload_file->list);
 		WRITE_ONCE(payload_file->removed, true);
-		mutex_unlock(&garble_udp_payload_files_lock);
+		mutex_unlock(set->lock);
 
 		proc_remove(payload_file->entry);
-		garble_udp_payload_file_put(payload_file);
+		garble_payload_file_put(payload_file);
 
-		mutex_lock(&garble_udp_payload_files_lock);
+		mutex_lock(set->lock);
 	}
-	mutex_unlock(&garble_udp_payload_files_lock);
+	mutex_unlock(set->lock);
 }
 
-static ssize_t udp_payload_file_ctl_read(struct file *file, char __user *buf,
-					 size_t count, loff_t *ppos)
+static ssize_t payload_file_ctl_read(struct file *file, char __user *buf,
+				     size_t count, loff_t *ppos)
 {
+	struct garble_payload_file_set *set = PDE_DATA(file_inode(file));
 	struct garble_payload_file *payload_file;
 	char out[512];
 	size_t pos = 0;
 
-	mutex_lock(&garble_udp_payload_files_lock);
-	list_for_each_entry(payload_file, &garble_udp_payload_files, list) {
+	mutex_lock(set->lock);
+	list_for_each_entry(payload_file, set->files, list) {
 		struct garble_payload_blob *blob;
 		int len = 0;
 
@@ -1307,15 +1338,16 @@ static ssize_t udp_payload_file_ctl_read(struct file *file, char __user *buf,
 		if (pos >= sizeof(out))
 			break;
 	}
-	mutex_unlock(&garble_udp_payload_files_lock);
+	mutex_unlock(set->lock);
 
 	return simple_read_from_buffer(buf, count, ppos, out, pos);
 }
 
-static ssize_t udp_payload_file_ctl_write(struct file *file,
-					  const char __user *buf,
-					  size_t count, loff_t *ppos)
+static ssize_t payload_file_ctl_write(struct file *file,
+				      const char __user *buf,
+				      size_t count, loff_t *ppos)
 {
+	struct garble_payload_file_set *set = PDE_DATA(file_inode(file));
 	char cmd[GARBLE_PAYLOAD_FILE_CTL_BUF_LEN];
 	char *op;
 	char *name;
@@ -1337,9 +1369,9 @@ static ssize_t udp_payload_file_ctl_write(struct file *file,
 	name = strim(name);
 
 	if (!strcmp(op, "create"))
-		ret = garble_udp_payload_file_create(name);
+		ret = garble_payload_file_create(set, name);
 	else if (!strcmp(op, "delete") || !strcmp(op, "remove"))
-		ret = garble_udp_payload_file_delete(name);
+		ret = garble_payload_file_delete(set, name);
 	else
 		ret = -EINVAL;
 
@@ -1347,15 +1379,15 @@ static ssize_t udp_payload_file_ctl_write(struct file *file,
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
-static const struct proc_ops udp_payload_file_ctl_proc_ops = {
-	.proc_read	= udp_payload_file_ctl_read,
-	.proc_write	= udp_payload_file_ctl_write,
+static const struct proc_ops payload_file_ctl_proc_ops = {
+	.proc_read	= payload_file_ctl_read,
+	.proc_write	= payload_file_ctl_write,
 };
 #else
-static const struct file_operations udp_payload_file_ctl_proc_ops = {
+static const struct file_operations payload_file_ctl_proc_ops = {
 	.owner		= THIS_MODULE,
-	.read		= udp_payload_file_ctl_read,
-	.write		= udp_payload_file_ctl_write,
+	.read		= payload_file_ctl_read,
+	.write		= payload_file_ctl_write,
 };
 #endif
 
@@ -1406,9 +1438,9 @@ int garble_sysctl_init(void)
 		return -ENOMEM;
 	}
 
-	payload_file_proc_dir = proc_mkdir("payload_file", garble_proc_dir);
-	if (!payload_file_proc_dir) {
-		pr_err("garble: failed to create /proc/garble/payload_file directory\n");
+	udp_proc_dir = proc_mkdir("udp", garble_proc_dir);
+	if (!udp_proc_dir) {
+		pr_err("garble: failed to create /proc/garble/udp directory\n");
 		remove_proc_entry("stats", garble_proc_dir);
 		remove_proc_entry("tcp_payload", garble_proc_dir);
 		remove_proc_entry("udp_payload", garble_proc_dir);
@@ -1416,10 +1448,26 @@ int garble_sysctl_init(void)
 		return -ENOMEM;
 	}
 
-	udp_payload_file_proc_dir = proc_mkdir("udp", payload_file_proc_dir);
+	udp_payload_file_proc_dir = proc_mkdir("payload_file", udp_proc_dir);
 	if (!udp_payload_file_proc_dir) {
-		pr_err("garble: failed to create /proc/garble/payload_file/udp directory\n");
-		remove_proc_entry("payload_file", garble_proc_dir);
+		pr_err("garble: failed to create /proc/garble/udp/payload_file directory\n");
+		remove_proc_entry("udp", garble_proc_dir);
+		remove_proc_entry("stats", garble_proc_dir);
+		remove_proc_entry("tcp_payload", garble_proc_dir);
+		remove_proc_entry("udp_payload", garble_proc_dir);
+		remove_proc_entry("garble", NULL);
+		return -ENOMEM;
+	}
+	garble_udp_payload_file_set.dir = udp_payload_file_proc_dir;
+
+	udp_payload_file_ctl_proc_entry = proc_create_data("ctl", 0644,
+					udp_payload_file_proc_dir,
+					&payload_file_ctl_proc_ops,
+					&garble_udp_payload_file_set);
+	if (!udp_payload_file_ctl_proc_entry) {
+		pr_err("garble: failed to create /proc/garble/udp/payload_file/ctl entry\n");
+		remove_proc_entry("payload_file", udp_proc_dir);
+		remove_proc_entry("udp", garble_proc_dir);
 		remove_proc_entry("stats", garble_proc_dir);
 		remove_proc_entry("tcp_payload", garble_proc_dir);
 		remove_proc_entry("udp_payload", garble_proc_dir);
@@ -1427,13 +1475,45 @@ int garble_sysctl_init(void)
 		return -ENOMEM;
 	}
 
-	udp_payload_file_ctl_proc_entry = proc_create("ctl", 0644,
-						     udp_payload_file_proc_dir,
-						     &udp_payload_file_ctl_proc_ops);
-	if (!udp_payload_file_ctl_proc_entry) {
-		pr_err("garble: failed to create /proc/garble/payload_file/udp/ctl entry\n");
-		remove_proc_entry("udp", payload_file_proc_dir);
-		remove_proc_entry("payload_file", garble_proc_dir);
+	tcp_proc_dir = proc_mkdir("tcp", garble_proc_dir);
+	if (!tcp_proc_dir) {
+		pr_err("garble: failed to create /proc/garble/tcp directory\n");
+		remove_proc_entry("ctl", udp_payload_file_proc_dir);
+		remove_proc_entry("payload_file", udp_proc_dir);
+		remove_proc_entry("udp", garble_proc_dir);
+		remove_proc_entry("stats", garble_proc_dir);
+		remove_proc_entry("tcp_payload", garble_proc_dir);
+		remove_proc_entry("udp_payload", garble_proc_dir);
+		remove_proc_entry("garble", NULL);
+		return -ENOMEM;
+	}
+
+	tcp_payload_file_proc_dir = proc_mkdir("payload_file", tcp_proc_dir);
+	if (!tcp_payload_file_proc_dir) {
+		pr_err("garble: failed to create /proc/garble/tcp/payload_file directory\n");
+		remove_proc_entry("tcp", garble_proc_dir);
+		remove_proc_entry("ctl", udp_payload_file_proc_dir);
+		remove_proc_entry("payload_file", udp_proc_dir);
+		remove_proc_entry("udp", garble_proc_dir);
+		remove_proc_entry("stats", garble_proc_dir);
+		remove_proc_entry("tcp_payload", garble_proc_dir);
+		remove_proc_entry("udp_payload", garble_proc_dir);
+		remove_proc_entry("garble", NULL);
+		return -ENOMEM;
+	}
+	garble_tcp_payload_file_set.dir = tcp_payload_file_proc_dir;
+
+	tcp_payload_file_ctl_proc_entry = proc_create_data("ctl", 0644,
+					tcp_payload_file_proc_dir,
+					&payload_file_ctl_proc_ops,
+					&garble_tcp_payload_file_set);
+	if (!tcp_payload_file_ctl_proc_entry) {
+		pr_err("garble: failed to create /proc/garble/tcp/payload_file/ctl entry\n");
+		remove_proc_entry("payload_file", tcp_proc_dir);
+		remove_proc_entry("tcp", garble_proc_dir);
+		remove_proc_entry("ctl", udp_payload_file_proc_dir);
+		remove_proc_entry("payload_file", udp_proc_dir);
+		remove_proc_entry("udp", garble_proc_dir);
 		remove_proc_entry("stats", garble_proc_dir);
 		remove_proc_entry("tcp_payload", garble_proc_dir);
 		remove_proc_entry("udp_payload", garble_proc_dir);
@@ -1484,13 +1564,20 @@ void garble_sysctl_exit(void)
 	unregister_sysctl_table(garble_sysctl_header);
 
 	/* Remove procfs entries */
-	garble_udp_payload_files_remove_all();
+	garble_payload_files_remove_all(&garble_udp_payload_file_set);
+	garble_payload_files_remove_all(&garble_tcp_payload_file_set);
+	if (tcp_payload_file_ctl_proc_entry)
+		remove_proc_entry("ctl", tcp_payload_file_proc_dir);
+	if (tcp_payload_file_proc_dir)
+		remove_proc_entry("payload_file", tcp_proc_dir);
+	if (tcp_proc_dir)
+		remove_proc_entry("tcp", garble_proc_dir);
 	if (udp_payload_file_ctl_proc_entry)
 		remove_proc_entry("ctl", udp_payload_file_proc_dir);
 	if (udp_payload_file_proc_dir)
-		remove_proc_entry("udp", payload_file_proc_dir);
-	if (payload_file_proc_dir)
-		remove_proc_entry("payload_file", garble_proc_dir);
+		remove_proc_entry("payload_file", udp_proc_dir);
+	if (udp_proc_dir)
+		remove_proc_entry("udp", garble_proc_dir);
 	if (stats_proc_entry)
 		remove_proc_entry("stats", garble_proc_dir);
 	if (tcp_payload_proc_entry)
@@ -1774,7 +1861,8 @@ inline const char *garble_get_udp_payload(int *len)
 	}
 }
 
-inline unsigned char *garble_get_udp_payload_file(unsigned char *buf, int *len)
+static unsigned char *garble_get_payload_file(struct garble_payload_file_set *set,
+					      unsigned char *buf, int *len)
 {
 	struct garble_payload_file *payload_file;
 	struct garble_payload_blob *blob;
@@ -1782,7 +1870,7 @@ inline unsigned char *garble_get_udp_payload_file(unsigned char *buf, int *len)
 	int target;
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(payload_file, &garble_udp_payload_files, list) {
+	list_for_each_entry_rcu(payload_file, set->files, list) {
 		if (READ_ONCE(payload_file->removed))
 			continue;
 
@@ -1798,7 +1886,7 @@ inline unsigned char *garble_get_udp_payload_file(unsigned char *buf, int *len)
 	}
 
 	target = prandom_u32() % count;
-	list_for_each_entry_rcu(payload_file, &garble_udp_payload_files, list) {
+	list_for_each_entry_rcu(payload_file, set->files, list) {
 		if (READ_ONCE(payload_file->removed))
 			continue;
 
@@ -1816,6 +1904,16 @@ inline unsigned char *garble_get_udp_payload_file(unsigned char *buf, int *len)
 
 	*len = 0;
 	return NULL;
+}
+
+inline unsigned char *garble_get_udp_payload_file(unsigned char *buf, int *len)
+{
+	return garble_get_payload_file(&garble_udp_payload_file_set, buf, len);
+}
+
+inline unsigned char *garble_get_tcp_payload_file(unsigned char *buf, int *len)
+{
+	return garble_get_payload_file(&garble_tcp_payload_file_set, buf, len);
 }
 
 inline const char *garble_get_tcp_payload(int *len)

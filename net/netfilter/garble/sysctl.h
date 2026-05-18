@@ -33,6 +33,7 @@ inline int garble_get_udp_repeat_pkt(void);
 inline const char *garble_get_udp_payload(int *len);
 inline const char *garble_get_tcp_payload(int *len);
 inline unsigned char *garble_get_udp_payload_file(unsigned char *buf, int *len);
+inline unsigned char *garble_get_tcp_payload_file(unsigned char *buf, int *len);
 inline bool garble_check_if_tcp_binary_enabled(void);
 inline bool garble_check_if_udp_binary_enabled(void);
 inline int garble_get_udp_ttl(void);
@@ -70,6 +71,7 @@ extern int garble_get_udp_repeat_pkt(void);
 extern const char *garble_get_udp_payload(int *len);
 extern const char *garble_get_tcp_payload(int *len);
 extern unsigned char *garble_get_udp_payload_file(unsigned char *buf, int *len);
+extern unsigned char *garble_get_tcp_payload_file(unsigned char *buf, int *len);
 extern bool garble_check_if_tcp_binary_enabled(void);
 extern bool garble_check_if_udp_binary_enabled(void);
 extern int garble_get_udp_ttl(void);
@@ -112,6 +114,7 @@ enum tcp_obf_proto {
 	TCP_OBF_POSTGRES_STARTUP = 4,
 	TCP_OBF_MQTT_CONNECT = 5,
 	TCP_OBF_FTP_USER = 6,
+	TCP_OBF_PAYLOAD_FILE = 7,
 
 	TCP_OBF_PROTO_MAX
 };
