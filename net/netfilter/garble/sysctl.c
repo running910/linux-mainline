@@ -92,6 +92,7 @@ static int garble_udp_ttl = 3;                          // Default TTL value for
 static char garble_udp_obf_protos[UDP_OBF_PROTOS_BUF_LEN] = ""; // comma separated UDP obfuscation protos
 static char garble_tcp_obf_protos[TCP_OBF_PROTOS_BUF_LEN] = ""; // comma separated TCP obfuscation protos
 static int garble_tcp_ttl = 3;                          // Default TTL value for TCP packets
+static int garble_ttl_percent = 0;                       // 0 disables dynamic TTL adjustment
 static char garble_udp_extra[UDP_EXTRA_BUF_LEN] ={0};   // UDP extra configuration string
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
@@ -299,6 +300,37 @@ static int proc_handler_ttl(struct ctl_table *table, int write,
 	/* Update the actual TTL value */
 	*(int *)table->data = new_ttl;
 	pr_info("garble: %s updated to %d\n", table->procname, new_ttl);
+
+	return 0;
+}
+
+static int proc_handler_ttl_percent(struct ctl_table *table, int write,
+				    void __user *buffer, size_t *lenp,
+				    loff_t *ppos)
+{
+	int ret;
+	int new_percent;
+	struct ctl_table tmp_table;
+
+	if (!write)
+		return proc_dointvec(table, write, buffer, lenp, ppos);
+
+	memset(&tmp_table, 0, sizeof(tmp_table));
+	tmp_table.data = &new_percent;
+	tmp_table.maxlen = sizeof(int);
+
+	ret = proc_dointvec(&tmp_table, write, buffer, lenp, ppos);
+	if (ret)
+		return ret;
+
+	if (new_percent < 0 || new_percent >= 100) {
+		pr_info("garble: %s value %d is out of range [0, 99]\n",
+			table->procname, new_percent);
+		return -EINVAL;
+	}
+
+	*(int *)table->data = new_percent;
+	pr_info("garble: %s updated to %d\n", table->procname, new_percent);
 
 	return 0;
 }
@@ -987,6 +1019,13 @@ static struct ctl_table garble_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_handler_ttl,
+	},
+	{
+		.procname	= "ttl_percent",
+		.data		= &garble_ttl_percent,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_handler_ttl_percent,
 	},
 	{
 		.procname	= "udp_obf_proto",
@@ -1738,6 +1777,45 @@ inline int garble_get_tcp_ttl(void)
 inline int garble_get_udp_ttl(void)
 {
 	return garble_udp_ttl;
+}
+
+static int garble_estimate_hops(u8 ttl)
+{
+	/*
+	 * Estimate hop count from the observed TTL/hop-limit.
+	 * assume the peer started from one of the common initial TTL values
+	 * 64, 128 or 255, then subtract the remaining TTL we saw.
+	 */
+	if (ttl <= 64)
+		return 64 - ttl;
+	else if (ttl <= 128)
+		return 128 - ttl;
+
+	return 255 - ttl;
+}
+
+static int garble_calc_ttl(int base_ttl, u8 src_ttl)
+{
+	int ttl;
+	int hops;
+
+	if (!garble_ttl_percent || !src_ttl)
+		return base_ttl;
+
+	hops = garble_estimate_hops(src_ttl);
+	ttl = hops * garble_ttl_percent / 100;
+
+	return ttl > base_ttl ? ttl : base_ttl;
+}
+
+inline int garble_calc_tcp_ttl(u8 src_ttl)
+{
+	return garble_calc_ttl(garble_tcp_ttl, src_ttl);
+}
+
+inline int garble_calc_udp_ttl(u8 src_ttl)
+{
+	return garble_calc_ttl(garble_udp_ttl, src_ttl);
 }
 
 inline int garble_get_udp_obf_proto(void)

@@ -1,4 +1,5 @@
 #include <linux/ip.h>
+#include <linux/ipv6.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/skbuff.h>
@@ -107,7 +108,7 @@ struct sk_buff *generate_and_send_tcp_packet(__be32 saddr, __be32 daddr,
 					     __be16 sport, __be16 dport,
 					     u32 seq, u32 ack_seq,
 					     const struct net *net, char *payload,
-					     int payload_len)
+					     int payload_len, int ttl)
 {
 	int tcp_hdr_len = sizeof(struct tcphdr);
 	int ip_hdr_len = sizeof(struct iphdr);
@@ -157,7 +158,7 @@ struct sk_buff *generate_and_send_tcp_packet(__be32 saddr, __be32 daddr,
 	iph->tot_len = htons(total_len);
 	iph->id = htons(0);
 	iph->frag_off = htons(IP_DF);
-	iph->ttl = garble_get_tcp_ttl();
+	iph->ttl = ttl;
 	iph->protocol = IPPROTO_TCP;
 	iph->saddr = saddr;
 	iph->daddr = daddr;
@@ -206,7 +207,8 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 						__be16 sport, __be16 dport,
 						u32 seq, u32 ack_seq,
 						const struct net *net,
-						char *payload, int payload_len)
+						char *payload, int payload_len,
+						int ttl)
 {
 	int tcp_hdr_len = sizeof(struct tcphdr);
 	int ip6_hdr_len = sizeof(struct ipv6hdr);
@@ -261,7 +263,7 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 	ip6h->version = 6;
 	ip6h->payload_len = htons(tcp_hdr_len + payload_len);
 	ip6h->nexthdr = IPPROTO_TCP;
-	ip6h->hop_limit = garble_get_tcp_ttl();
+	ip6h->hop_limit = ttl;
 	ip6h->saddr = *saddr; 
 	ip6h->daddr = *daddr;
 
@@ -315,7 +317,8 @@ struct sk_buff *generate_and_send_tcp_packet_v6(const struct in6_addr *saddr, co
 
 struct sk_buff *generate_and_send_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, 
 					     __be16 dport, const struct net *net, 
-					     char *payload, int payload_len)
+					     char *payload, int payload_len,
+					     int ttl)
 {
 	struct sk_buff *new_skb;
 	struct iphdr *new_iph;
@@ -367,7 +370,7 @@ struct sk_buff *generate_and_send_udp_packet(__be32 saddr, __be32 daddr, __be16 
 	new_iph->tot_len = htons(total_len);
 	new_iph->id = htons(0);
 	new_iph->frag_off = htons(IP_DF);
-	new_iph->ttl = garble_get_udp_ttl();
+	new_iph->ttl = ttl;
 	new_iph->protocol = IPPROTO_UDP;
 	new_iph->saddr = saddr;
 	new_iph->daddr = daddr;
@@ -417,7 +420,8 @@ struct sk_buff *generate_and_send_udp_packet(__be32 saddr, __be32 daddr, __be16 
 
 struct sk_buff *generate_and_send_udp_packet_v6(const struct in6_addr *saddr, const struct in6_addr *daddr,
 					        __be16 sport, __be16 dport, const struct net *net, 
-						char *payload, int payload_len)
+						char *payload, int payload_len,
+						int ttl)
 {
 	int udp_hdr_len = sizeof(struct udphdr);
 	int ip6_hdr_len = sizeof(struct ipv6hdr);
@@ -468,7 +472,7 @@ struct sk_buff *generate_and_send_udp_packet_v6(const struct in6_addr *saddr, co
 	ip6h->version = 6;
 	ip6h->payload_len = htons(udp_hdr_len + payload_len);
 	ip6h->nexthdr = IPPROTO_UDP;
-	ip6h->hop_limit = garble_get_udp_ttl();
+	ip6h->hop_limit = ttl;
 	ip6h->saddr = *saddr;
 	ip6h->daddr = *daddr;
 

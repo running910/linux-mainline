@@ -43,7 +43,7 @@ EXPORT_SYMBOL_GPL(nf_garble_unregister_ops);
 
 void nf_garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
 				       __be16 dport, u32 seq, u32 ack_seq,
-				       const struct net *net)
+				       const struct net *net, u8 src_ttl)
 {
 	const struct nf_garble_ops *ops;
 
@@ -51,7 +51,7 @@ void nf_garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
 	ops = rcu_dereference(nf_garble_ops);
 	if (ops)
 		ops->insert_tcp_packet(saddr, daddr, sport, dport, seq, ack_seq,
-				       net);
+				       net, src_ttl);
 	rcu_read_unlock();
 }
 
@@ -59,7 +59,7 @@ void nf_garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
 				       const struct in6_addr *daddr,
 				       __be16 sport, __be16 dport,
 				       u32 seq, u32 ack_seq,
-				       const struct net *net)
+				       const struct net *net, u8 src_ttl)
 {
 	const struct nf_garble_ops *ops;
 
@@ -67,7 +67,7 @@ void nf_garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
 	ops = rcu_dereference(nf_garble_ops);
 	if (ops)
 		ops->insert_tcp_packet_v6(saddr, daddr, sport, dport, seq,
-					  ack_seq, net);
+					  ack_seq, net, src_ttl);
 	rcu_read_unlock();
 }
 

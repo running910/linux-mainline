@@ -113,11 +113,17 @@ static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const s
                                                  otuple->src.u3.ip,
                                                  otuple->dst.u.tcp.port,
                                                  otuple->src.u.tcp.port,
-                                                 0, 0, state->net);
+                                                 0, 0, state->net,
+						 ip_hdr(skb)->ttl);
           
                 // must be UDP, 因为前面已经过滤掉非TCP非UDP的包了
                 } else {
-                        garble_insert_udp_packet(otuple->dst.u3.ip, otuple->src.u3.ip, otuple->dst.u.tcp.port, otuple->src.u.tcp.port, state->net);
+                        garble_insert_udp_packet(otuple->dst.u3.ip,
+						 otuple->src.u3.ip,
+						 otuple->dst.u.tcp.port,
+						 otuple->src.u.tcp.port,
+						 state->net,
+						 ip_hdr(skb)->ttl);
                 } 
 
         } else if (state->pf == NFPROTO_IPV6) {

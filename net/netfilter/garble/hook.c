@@ -1,4 +1,5 @@
 #include <linux/ip.h>
+#include <linux/ipv6.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/skbuff.h>
@@ -464,11 +465,12 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 
 void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
 			      __be16 dport, u32 seq, u32 ack_seq,
-			      const struct net *net)
+			      const struct net *net, u8 src_ttl)
 {
         unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
 	garble_tuple_t tuple;
         int payload_len = sizeof(payload);
+	int ttl = garble_calc_tcp_ttl(src_ttl);
 	int i;
 
 	//__log("obvious new connection is comming saddr %x daddr %x sport %d dport %d net %x", saddr, daddr, sport, dport, net);
@@ -496,18 +498,19 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
 
 	for (i = 0; i < garble_get_tcp_repeat_pkt(); i++)
 		generate_and_send_tcp_packet(saddr, daddr, sport, dport, seq, ack_seq,
-				     net, payload, payload_len);
+				     net, payload, payload_len, ttl);
 }
 
 void garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
 				 const struct in6_addr *daddr,
 				 __be16 sport, __be16 dport,
 				 u32 seq, u32 ack_seq,
-				 const struct net *net)
+				 const struct net *net, u8 src_ttl)
 {
 	unsigned char payload[GARBLE_MAX_TCP_PAYLOAD];
 	garble_tuple_v6_t tuple6;
 	int payload_len = sizeof(payload);
+	int ttl = garble_calc_tcp_ttl(src_ttl);
 	int i;
 
 	if (!saddr || !daddr || !sport || !dport || !net)
@@ -538,14 +541,17 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
 
 	for (i = 0; i < garble_get_tcp_repeat_pkt(); i++)
 		generate_and_send_tcp_packet_v6(saddr, daddr, sport, dport, seq,
-					ack_seq, net, payload, payload_len);
+					ack_seq, net, payload, payload_len,
+					ttl);
 }
 
-void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport, const struct net *net)
+void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport,
+			      __be16 dport, const struct net *net, u8 src_ttl)
 {
 	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
 	garble_tuple_t tuple;
 	int payload_len;
+	int ttl = garble_calc_udp_ttl(src_ttl);
 	int i;
 
 	if (!saddr || !daddr || !sport || !dport || !net)
@@ -571,16 +577,22 @@ void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport, __be16 d
 		return;
 
 	for (i = 0; i < garble_get_udp_repeat_pkt(); i++)
-		generate_and_send_udp_packet(saddr, daddr, sport, dport, net, payload, payload_len);
+		generate_and_send_udp_packet(saddr, daddr, sport, dport, net,
+					     payload, payload_len, ttl);
 
 }
+
 EXPORT_SYMBOL(garble_insert_udp_packet);
 
-void garble_insert_udp_packet_v6(const struct in6_addr *saddr, const struct in6_addr *daddr, __be16 sport, __be16 dport, const struct net *net)
+void garble_insert_udp_packet_v6(const struct in6_addr *saddr,
+				 const struct in6_addr *daddr,
+				 __be16 sport, __be16 dport,
+				 const struct net *net, u8 src_ttl)
 {
 	unsigned char payload[GARBLE_MAX_UDP_PAYLOAD];
 	garble_tuple_v6_t tuple6;
 	int payload_len = sizeof(payload);
+	int ttl = garble_calc_udp_ttl(src_ttl);
 	int i;
 
 	if (!saddr || !daddr || !sport || !dport || !net)
@@ -607,7 +619,8 @@ void garble_insert_udp_packet_v6(const struct in6_addr *saddr, const struct in6_
 		return;
 
 	for (i = 0; i < garble_get_udp_repeat_pkt(); i++)
-		generate_and_send_udp_packet_v6(saddr, daddr, sport, dport, net, payload, payload_len);
+		generate_and_send_udp_packet_v6(saddr, daddr, sport, dport, net,
+						payload, payload_len, ttl);
 }
 
 void insert_packet_with_skb(struct sk_buff *skb, const struct net *net,
@@ -615,11 +628,16 @@ void insert_packet_with_skb(struct sk_buff *skb, const struct net *net,
 {
 	garble_tuple_t tuple;
 	garble_tuple_v6_t tuple6;
+	u8 src_ttl;
 
 	if (!skb || !net)
 		return;
 
+	src_ttl = 0;
 	if (skb->protocol == htons(ETH_P_IP)) {
+		/* Only reverse path carries a packet from the peer. */
+		if (reverse)
+			src_ttl = ip_hdr(skb)->ttl;
 
 	        if (!extract_tuple_info(skb, &tuple))
 		        return;
@@ -629,22 +647,31 @@ void insert_packet_with_skb(struct sk_buff *skb, const struct net *net,
 			if (reverse) {
 				garble_insert_tcp_packet(tuple.daddr, tuple.saddr,
 							 tuple.dport, tuple.sport,
-							 seq, ack_seq, net);
+							 seq, ack_seq, net,
+							 src_ttl);
 			} else {
 				garble_insert_tcp_packet(tuple.saddr, tuple.daddr,
 							 tuple.sport, tuple.dport,
-							 seq, ack_seq, net);
+							 seq, ack_seq, net,
+							 src_ttl);
 			}
 		} else if (tuple.protocol == IPPROTO_UDP) {
 
 			if (reverse) {
-				garble_insert_udp_packet(tuple.daddr, tuple.saddr, tuple.dport, tuple.sport, net);
+				garble_insert_udp_packet(tuple.daddr, tuple.saddr,
+							 tuple.dport, tuple.sport,
+							 net, src_ttl);
 			} else {
-				garble_insert_udp_packet(tuple.saddr, tuple.daddr, tuple.sport, tuple.dport, net);
+				garble_insert_udp_packet(tuple.saddr, tuple.daddr,
+							 tuple.sport, tuple.dport,
+							 net, src_ttl);
 			}
 		}
 
         } else if (skb->protocol == htons(ETH_P_IPV6)) {
+		/* Only reverse path carries a packet from the peer. */
+		if (reverse)
+			src_ttl = ipv6_hdr(skb)->hop_limit;
 
 	        if (!extract_tuple_info_v6(skb, &tuple6))
 		        return;
@@ -655,18 +682,26 @@ void insert_packet_with_skb(struct sk_buff *skb, const struct net *net,
 				garble_insert_tcp_packet_v6(&tuple6.daddr, &tuple6.saddr,
 							    tuple6.dport,
 							    tuple6.sport,
-							    seq, ack_seq, net);
+							    seq, ack_seq, net,
+							    src_ttl);
 			else
 				garble_insert_tcp_packet_v6(&tuple6.saddr, &tuple6.daddr,
 							    tuple6.sport,
 							    tuple6.dport,
-							    seq, ack_seq, net);
+							    seq, ack_seq, net,
+							    src_ttl);
 		} else if (tuple6.protocol == IPPROTO_UDP) {
 
 			if (reverse)				
-				garble_insert_udp_packet_v6(&tuple6.daddr, &tuple6.saddr, tuple6.dport, tuple6.sport, net);
+				garble_insert_udp_packet_v6(&tuple6.daddr, &tuple6.saddr,
+							    tuple6.dport,
+							    tuple6.sport,
+							    net, src_ttl);
 			else			
-				garble_insert_udp_packet_v6(&tuple6.saddr, &tuple6.daddr, tuple6.sport, tuple6.dport, net);
+				garble_insert_udp_packet_v6(&tuple6.saddr, &tuple6.daddr,
+							    tuple6.sport,
+							    tuple6.dport,
+							    net, src_ttl);
 		
 		}
         }

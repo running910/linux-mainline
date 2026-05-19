@@ -530,7 +530,8 @@ static int tcp_v6_send_synack(const struct sock *sk, struct dst_entry *dst,
 					   ireq->ir_rmt_port,
 					   tcp_rsk(req)->snt_isn+1,
 					   tcp_rsk(req)->rcv_nxt,
-					   sock_net(sk));
+					   sock_net(sk),
+					   syn_skb ? ipv6_hdr(syn_skb)->hop_limit : 0);
 #endif
 
 	if (skb) {
