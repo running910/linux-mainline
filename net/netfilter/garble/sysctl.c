@@ -1779,7 +1779,7 @@ inline int garble_get_udp_ttl(void)
 	return garble_udp_ttl;
 }
 
-static int garble_estimate_hops(u8 ttl)
+inline int garble_estimate_hops(u8 ttl)
 {
 	/*
 	 * Estimate hop count from the observed TTL/hop-limit.
@@ -1794,7 +1794,7 @@ static int garble_estimate_hops(u8 ttl)
 	return 255 - ttl;
 }
 
-static int garble_calc_ttl(int base_ttl, u8 src_ttl)
+inline int garble_calc_ttl(int base_ttl, u8 src_ttl)
 {
 	int ttl;
 	int hops;

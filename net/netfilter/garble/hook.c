@@ -473,6 +473,8 @@ void garble_insert_tcp_packet(__be32 saddr, __be32 daddr, __be16 sport,
 	int ttl = garble_calc_tcp_ttl(src_ttl);
 	int i;
 
+	log_ipaddr(daddr, "src ttl %d base ttl %d estimate_hops %d ready to send ttl %d", src_ttl, garble_get_tcp_ttl(), garble_estimate_hops(src_ttl), ttl);
+
 	//__log("obvious new connection is comming saddr %x daddr %x sport %d dport %d net %x", saddr, daddr, sport, dport, net);
 
 	if (!saddr || !daddr || !sport || !dport || !net)
@@ -553,6 +555,8 @@ void garble_insert_udp_packet(__be32 saddr, __be32 daddr, __be16 sport,
 	int payload_len;
 	int ttl = garble_calc_udp_ttl(src_ttl);
 	int i;
+
+	log_ipaddr(daddr, "src ttl %d base ttl %d estimate_hops %d ready to send ttl %d", src_ttl, garble_get_udp_ttl(), garble_estimate_hops(src_ttl), ttl);
 
 	if (!saddr || !daddr || !sport || !dport || !net)
 		return;
