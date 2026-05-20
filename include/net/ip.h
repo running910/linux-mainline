@@ -24,8 +24,10 @@
 #include <linux/skbuff.h>
 #include <linux/jhash.h>
 #include <linux/sockptr.h>
+#include <linux/ipv6.h>
 
 #include <net/inet_sock.h>
+#include <net/ipv6.h>
 #include <net/route.h>
 #include <net/snmp.h>
 #include <net/flow.h>
@@ -772,27 +774,49 @@ void ip_sock_set_tos(struct sock *sk, int val);
 extern u32 netlog_remote_addr;
 extern u32 netlog_inner_addr;
 extern u32 netlog_enable;
+extern struct in6_addr netlog6_remote_addr;
+extern struct in6_addr netlog6_inner_addr;
+extern u32 netlog6_enable;
 
 #define skb_netlog_should_log(skb) \
-	(unlikely(netlog_enable) && skb_if_netlog_packet(skb))
+	(unlikely(netlog_enable || netlog6_enable) && skb_if_netlog_packet(skb))
 
 static inline int skb_if_netlog_packet(const struct sk_buff *skb)
 {
 	const struct iphdr *iph;
+	const struct ipv6hdr *ip6h;
 
 	if (!skb)
 		return 0;
 
-	iph = ip_hdr(skb);
+	if (skb->protocol == htons(ETH_P_IP)) {
+		if (!netlog_enable)
+			return 0;
 
-	//if (iph->protocol != IPPROTO_UDP)
-	//	return 0;
+		iph = ip_hdr(skb);
 
-	if (iph->daddr == netlog_remote_addr || iph->saddr == netlog_remote_addr)
-		return 1;
+		//if (iph->protocol != IPPROTO_UDP)
+		//	return 0;
 
-	if (iph->daddr == netlog_inner_addr || iph->saddr == netlog_inner_addr)
-		return 1;
+		if (iph->daddr == netlog_remote_addr || iph->saddr == netlog_remote_addr)
+			return 1;
+
+		if (iph->daddr == netlog_inner_addr || iph->saddr == netlog_inner_addr)
+			return 1;
+	} else if (skb->protocol == htons(ETH_P_IPV6)) {
+		if (!netlog6_enable)
+			return 0;
+
+		ip6h = ipv6_hdr(skb);
+
+		if (ipv6_addr_equal(&ip6h->daddr, &netlog6_remote_addr) ||
+		    ipv6_addr_equal(&ip6h->saddr, &netlog6_remote_addr))
+			return 1;
+
+		if (ipv6_addr_equal(&ip6h->daddr, &netlog6_inner_addr) ||
+		    ipv6_addr_equal(&ip6h->saddr, &netlog6_inner_addr))
+			return 1;
+	}
 
 	return 0;
 }
@@ -800,6 +824,18 @@ static inline int skb_if_netlog_packet(const struct sk_buff *skb)
 static inline int ipaddr_if_netlog_packet(u32 addr)
 {
 	if (addr == netlog_remote_addr || addr == netlog_inner_addr)
+		return 1;
+
+	return 0;
+}
+
+static inline int ipaddr6_if_netlog_packet(const struct in6_addr *addr)
+{
+	if (!addr)
+		return 0;
+
+	if (ipv6_addr_equal(addr, &netlog6_remote_addr) ||
+	    ipv6_addr_equal(addr, &netlog6_inner_addr))
 		return 1;
 
 	return 0;
@@ -937,43 +973,9 @@ static inline void log_tuple_info6(const struct sk_buff *skb, const char *extra)
 #define log_skb_pref(skb, fmt, ...) \
 	do { \
 		if (skb_netlog_should_log(skb)) { \
-			const struct iphdr *ip_header = ip_hdr(skb); \
-			char proto_str[8] = "UNKNOWN"; \
-			__be16 src_port = 0, dst_port = 0; \
 			char __extra_info[256]; \
-			\
-			switch (ip_header->protocol) { \
-			case IPPROTO_TCP: { \
-				const struct tcphdr *tcp = tcp_hdr(skb); \
-				src_port = tcp->source; \
-				dst_port = tcp->dest; \
-				strcpy(proto_str, "TCP"); \
-				break; \
-			} \
-			case IPPROTO_UDP: { \
-				const struct udphdr *udp = udp_hdr(skb); \
-				src_port = udp->source; \
-				dst_port = udp->dest; \
-				strcpy(proto_str, "UDP"); \
-				break; \
-			} \
-			} \
-			\
 			snprintf(__extra_info, sizeof(__extra_info), fmt, ##__VA_ARGS__); \
-			\
-			if (src_port && dst_port) { \
-				__log("[%s] %pI4:%d -> %pI4:%d | %s", \
-					proto_str, \
-					&ip_header->saddr, ntohs(src_port), \
-					&ip_header->daddr, ntohs(dst_port), \
-					__extra_info); \
-			} else { \
-				__log("[%s] %pI4 -> %pI4 | %s", \
-					proto_str, \
-					&ip_header->saddr, \
-					&ip_header->daddr, \
-					__extra_info); \
-			} \
+			log_tuple_info6(skb, __extra_info); \
 		} \
 	} while (0)
 
@@ -992,12 +994,20 @@ static inline void log_tuple_info6(const struct sk_buff *skb, const char *extra)
 		} \
 	} while (0)
 
+#define log_ipaddr6(addr, fmt, ...) \
+	do { \
+		const struct in6_addr *__addr = (addr); \
+		if (unlikely(netlog6_enable) && ipaddr6_if_netlog_packet(__addr)) { \
+			__log(fmt, ##__VA_ARGS__); \
+		} \
+	} while (0)
+
 #define log_skb_pref_func(skb, fmt, ...) \
 	do { \
 		if (skb_netlog_should_log(skb)) { \
 			char __extra_info[256]; \
 			snprintf(__extra_info, sizeof(__extra_info), fmt, ##__VA_ARGS__); \
-			log_tuple_info(skb, __extra_info); \
+			log_tuple_info6(skb, __extra_info); \
 		} \
 	} while (0)
 
@@ -1006,6 +1016,14 @@ static inline void log_tuple_info6(const struct sk_buff *skb, const char *extra)
 		u32 __addr = (addr); \
 		if (unlikely(netlog_enable) && ipaddr_if_netlog_packet(__addr)) { \
 			__log("%pI4 | " fmt, &__addr, ##__VA_ARGS__); \
+		} \
+	} while (0)
+
+#define log_ipaddr6_pref_func(addr, fmt, ...) \
+	do { \
+		const struct in6_addr *__addr = (addr); \
+		if (unlikely(netlog6_enable) && ipaddr6_if_netlog_packet(__addr)) { \
+			__log("%pI6c | " fmt, __addr, ##__VA_ARGS__); \
 		} \
 	} while (0)
 

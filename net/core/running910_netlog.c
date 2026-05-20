@@ -7,6 +7,7 @@
 #include <linux/string.h>	// for string operations
 #include <linux/ctype.h>	// for isspace()
 #include <linux/export.h>	// for EXPORT_SYMBOL
+#include <linux/ipv6.h>		// for struct in6_addr
 
 u32 netlog_remote_addr __read_mostly;
 EXPORT_SYMBOL(netlog_remote_addr);
@@ -14,8 +15,17 @@ EXPORT_SYMBOL(netlog_remote_addr);
 u32 netlog_inner_addr __read_mostly;
 EXPORT_SYMBOL(netlog_inner_addr);
 
-bool netlog_enable __read_mostly;
+u32 netlog_enable __read_mostly;
 EXPORT_SYMBOL(netlog_enable);
+
+struct in6_addr netlog6_remote_addr __read_mostly;
+EXPORT_SYMBOL(netlog6_remote_addr);
+
+struct in6_addr netlog6_inner_addr __read_mostly;
+EXPORT_SYMBOL(netlog6_inner_addr);
+
+u32 netlog6_enable __read_mostly;
+EXPORT_SYMBOL(netlog6_enable);
 
 #define MAX_NETLOG_STR_LEN	128
 
@@ -40,10 +50,30 @@ static void format_netlog_value(char *buf, size_t len)
 		&netlog_inner_addr);
 }
 
+static void format_netlog6_value(char *buf, size_t len)
+{
+	snprintf(buf, len, "%d,%pI6c,%pI6c",
+		netlog6_enable,
+		&netlog6_remote_addr,
+		&netlog6_inner_addr);
+}
+
+static int parse_netlog6_addr(const char *str, struct in6_addr *addr)
+{
+	if (!str || !addr)
+		return -EINVAL;
+
+	if (in6_pton(str, -1, addr->s6_addr, -1, NULL) <= 0)
+		return -EINVAL;
+
+	return 0;
+}
+
 static int proc_netlog_handler(struct ctl_table *table, int write,
 			      void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
+	bool enable;
 	char data[MAX_NETLOG_STR_LEN] = {0};
 	char *token;
 	char *ptr = data;
@@ -72,7 +102,7 @@ static int proc_netlog_handler(struct ctl_table *table, int write,
 	if (!token)
 		return -EINVAL;
 	
-	if (kstrtobool(token, &netlog_enable))
+	if (kstrtobool(token, &enable))
 		return -EINVAL;
 
 	/* Parse remote address */
@@ -93,6 +123,68 @@ static int proc_netlog_handler(struct ctl_table *table, int write,
 	if (!netlog_inner_addr)
 		return -EINVAL;
 
+	netlog_enable = enable;
+
+	return 0;
+}
+
+static int proc_netlog6_handler(struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	bool enable;
+	char data[MAX_NETLOG_STR_LEN] = {0};
+	char *token;
+	char *ptr = data;
+	struct in6_addr remote_addr;
+	struct in6_addr inner_addr;
+	struct ctl_table tmp = {
+		.data = data,
+		.maxlen = sizeof(data),
+	};
+
+	if (!write) {
+		char output[MAX_NETLOG_STR_LEN] = {0};
+
+		format_netlog6_value(output, sizeof(output));
+		tmp.data = output;
+		tmp.maxlen = sizeof(output);
+		return proc_dostring(&tmp, write, buffer, lenp, ppos);
+	}
+
+	ret = proc_dostring(&tmp, write, buffer, lenp, ppos);
+	if (ret || !write)
+		return ret;
+
+	strip_whitespace(data);
+
+	token = strsep(&ptr, ",");
+	if (!token)
+		return -EINVAL;
+
+	if (kstrtobool(token, &enable))
+		return -EINVAL;
+
+	token = strsep(&ptr, ",");
+	if (!token)
+		return -EINVAL;
+
+	ret = parse_netlog6_addr(token, &remote_addr);
+	if (ret)
+		return ret;
+
+	token = strsep(&ptr, ",");
+	if (!token)
+		return -EINVAL;
+
+	ret = parse_netlog6_addr(token, &inner_addr);
+	if (ret)
+		return ret;
+
+	netlog6_enable = enable;
+	netlog6_remote_addr = remote_addr;
+	netlog6_inner_addr = inner_addr;
+
 	return 0;
 }
 
@@ -101,6 +193,11 @@ static struct ctl_table net_core_table[] = {
 		.procname	= "netlog",
 		.mode		= 0644,
 		.proc_handler	= proc_netlog_handler,
+	},
+	{
+		.procname	= "netlog6",
+		.mode		= 0644,
+		.proc_handler	= proc_netlog6_handler,
 	},
 	{}
 };
@@ -127,8 +224,11 @@ static void __init net_debug_init(void)
 {
 	register_sysctl_table(root_table);
 	
-	netlog_enable = false;
+	netlog_enable = 0;
 	netlog_remote_addr = in_aton("10.9.8.2");
 	netlog_inner_addr = in_aton("192.168.1.147");
+	netlog6_enable = 0;
+	memset(&netlog6_remote_addr, 0, sizeof(netlog6_remote_addr));
+	memset(&netlog6_inner_addr, 0, sizeof(netlog6_inner_addr));
 }
 subsys_initcall(net_debug_init);
