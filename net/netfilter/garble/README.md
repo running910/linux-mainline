@@ -37,6 +37,7 @@ tcp_repeat_pkt=3
 udp_repeat_pkt=1
 tcp_ttl=3
 udp_ttl=3
+ttl_percent=0
 tcp_obf_proto=
 udp_obf_proto=
 domains=
@@ -44,6 +45,20 @@ lan_nics=br-virt,br-vmbr0
 ```
 
 `tcp_ttl` and `udp_ttl` accept values from `3` to `128`.
+`ttl_percent` accepts values from `0` to `99`; `0` disables dynamic TTL
+adjustment.
+
+When `ttl_percent` is non-zero and the original packet is available, garble
+estimates the peer hop count from the original packet TTL or IPv6 hop limit and
+uses:
+
+```text
+final_ttl = max(tcp_ttl or udp_ttl, estimated_hops * ttl_percent / 100)
+```
+
+For example, with `tcp_ttl=3` and `ttl_percent=50`, a peer estimated to be 20
+hops away gets fake TCP packets with TTL `10`. Paths that do not provide the
+original packet still use the fixed `tcp_ttl` or `udp_ttl` value.
 
 ## TCP obfuscation profiles
 
