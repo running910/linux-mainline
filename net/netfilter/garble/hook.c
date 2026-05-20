@@ -515,6 +515,9 @@ void garble_insert_tcp_packet_v6(const struct in6_addr *saddr,
 	int ttl = garble_calc_tcp_ttl(src_ttl);
 	int i;
 
+	log_ipaddr6(daddr, "src ttl %d base ttl %d estimate_hops %d ready to send ttl %d", src_ttl, garble_get_tcp_ttl(), garble_estimate_hops(src_ttl), ttl);
+
+
 	if (!saddr || !daddr || !sport || !dport || !net)
 		return;
 
@@ -598,6 +601,8 @@ void garble_insert_udp_packet_v6(const struct in6_addr *saddr,
 	int payload_len = sizeof(payload);
 	int ttl = garble_calc_udp_ttl(src_ttl);
 	int i;
+
+	log_ipaddr6(daddr, "src ttl %d base ttl %d estimate_hops %d ready to send ttl %d", src_ttl, garble_get_udp_ttl(), garble_estimate_hops(src_ttl), ttl);
 
 	if (!saddr || !daddr || !sport || !dport || !net)
 		return;
