@@ -14,6 +14,7 @@
 #include <linux/mutex.h>
 #include <linux/refcount.h>
 #include <linux/mm.h>
+#include <linux/seq_file.h>
 
 #include "sysctl.h"
 
@@ -1093,6 +1094,7 @@ static struct proc_dir_entry *garble_proc_dir;
 static struct proc_dir_entry *udp_payload_proc_entry;
 static struct proc_dir_entry *tcp_payload_proc_entry;
 static struct proc_dir_entry *stats_proc_entry;
+static struct proc_dir_entry *protos_proc_entry;
 static struct proc_dir_entry *udp_proc_dir;
 static struct proc_dir_entry *tcp_proc_dir;
 static struct proc_dir_entry *udp_payload_file_proc_dir;
@@ -1227,14 +1229,71 @@ static ssize_t garble_stats_read(struct file *file, char __user *buf,
 	return simple_read_from_buffer(buf, count, ppos, out, len);
 }
 
+static void garble_protos_seq_print_names(struct seq_file *m,
+					  const char * const names[][GARBLE_OBF_PROTO_NAME_MAX],
+					  int proto)
+{
+	int i;
+	bool printed = false;
+
+	for (i = 0; i < GARBLE_OBF_PROTO_NAME_MAX; i++) {
+		if (!names[proto][i])
+			continue;
+
+		seq_printf(m, "%s%s", printed ? "/" : "", names[proto][i]);
+		printed = true;
+	}
+}
+
+static int garble_protos_show(struct seq_file *m, void *v)
+{
+	int i;
+
+	seq_puts(m, "tcp:\n");
+	for (i = 0; i < TCP_OBF_PROTO_MAX; i++) {
+		seq_printf(m, "  %d ", i);
+		garble_protos_seq_print_names(m, garble_tcp_obf_proto_names, i);
+		seq_putc(m, '\n');
+	}
+
+	seq_puts(m, "udp:\n");
+	for (i = 0; i < UDP_OBF_PROTO_MAX; i++) {
+		seq_printf(m, "  %d ", i);
+		garble_protos_seq_print_names(m, garble_udp_obf_proto_names, i);
+		seq_putc(m, '\n');
+	}
+
+	return 0;
+}
+
+static int garble_protos_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, garble_protos_show, NULL);
+}
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
 static const struct proc_ops garble_stats_proc_ops = {
 	.proc_read	= garble_stats_read,
+};
+
+static const struct proc_ops garble_protos_proc_ops = {
+	.proc_open	= garble_protos_open,
+	.proc_read	= seq_read,
+	.proc_lseek	= seq_lseek,
+	.proc_release	= single_release,
 };
 #else
 static const struct file_operations garble_stats_proc_ops = {
 	.owner		= THIS_MODULE,
 	.read		= garble_stats_read,
+};
+
+static const struct file_operations garble_protos_proc_ops = {
+	.owner		= THIS_MODULE,
+	.open		= garble_protos_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
 };
 #endif
 
@@ -1481,9 +1540,21 @@ int garble_sysctl_init(void)
 		return -ENOMEM;
 	}
 
+	protos_proc_entry = proc_create("protos", 0444, garble_proc_dir,
+				       &garble_protos_proc_ops);
+	if (!protos_proc_entry) {
+		pr_err("garble: failed to create /proc/garble/protos entry\n");
+		remove_proc_entry("stats", garble_proc_dir);
+		remove_proc_entry("tcp_payload", garble_proc_dir);
+		remove_proc_entry("udp_payload", garble_proc_dir);
+		remove_proc_entry("garble", NULL);
+		return -ENOMEM;
+	}
+
 	udp_proc_dir = proc_mkdir("udp", garble_proc_dir);
 	if (!udp_proc_dir) {
 		pr_err("garble: failed to create /proc/garble/udp directory\n");
+		remove_proc_entry("protos", garble_proc_dir);
 		remove_proc_entry("stats", garble_proc_dir);
 		remove_proc_entry("tcp_payload", garble_proc_dir);
 		remove_proc_entry("udp_payload", garble_proc_dir);
@@ -1495,6 +1566,7 @@ int garble_sysctl_init(void)
 	if (!udp_payload_file_proc_dir) {
 		pr_err("garble: failed to create /proc/garble/udp/payload_file directory\n");
 		remove_proc_entry("udp", garble_proc_dir);
+		remove_proc_entry("protos", garble_proc_dir);
 		remove_proc_entry("stats", garble_proc_dir);
 		remove_proc_entry("tcp_payload", garble_proc_dir);
 		remove_proc_entry("udp_payload", garble_proc_dir);
@@ -1511,6 +1583,7 @@ int garble_sysctl_init(void)
 		pr_err("garble: failed to create /proc/garble/udp/payload_file/ctl entry\n");
 		remove_proc_entry("payload_file", udp_proc_dir);
 		remove_proc_entry("udp", garble_proc_dir);
+		remove_proc_entry("protos", garble_proc_dir);
 		remove_proc_entry("stats", garble_proc_dir);
 		remove_proc_entry("tcp_payload", garble_proc_dir);
 		remove_proc_entry("udp_payload", garble_proc_dir);
@@ -1524,6 +1597,7 @@ int garble_sysctl_init(void)
 		remove_proc_entry("ctl", udp_payload_file_proc_dir);
 		remove_proc_entry("payload_file", udp_proc_dir);
 		remove_proc_entry("udp", garble_proc_dir);
+		remove_proc_entry("protos", garble_proc_dir);
 		remove_proc_entry("stats", garble_proc_dir);
 		remove_proc_entry("tcp_payload", garble_proc_dir);
 		remove_proc_entry("udp_payload", garble_proc_dir);
@@ -1538,6 +1612,7 @@ int garble_sysctl_init(void)
 		remove_proc_entry("ctl", udp_payload_file_proc_dir);
 		remove_proc_entry("payload_file", udp_proc_dir);
 		remove_proc_entry("udp", garble_proc_dir);
+		remove_proc_entry("protos", garble_proc_dir);
 		remove_proc_entry("stats", garble_proc_dir);
 		remove_proc_entry("tcp_payload", garble_proc_dir);
 		remove_proc_entry("udp_payload", garble_proc_dir);
@@ -1557,6 +1632,7 @@ int garble_sysctl_init(void)
 		remove_proc_entry("ctl", udp_payload_file_proc_dir);
 		remove_proc_entry("payload_file", udp_proc_dir);
 		remove_proc_entry("udp", garble_proc_dir);
+		remove_proc_entry("protos", garble_proc_dir);
 		remove_proc_entry("stats", garble_proc_dir);
 		remove_proc_entry("tcp_payload", garble_proc_dir);
 		remove_proc_entry("udp_payload", garble_proc_dir);
@@ -1621,6 +1697,8 @@ void garble_sysctl_exit(void)
 		remove_proc_entry("payload_file", udp_proc_dir);
 	if (udp_proc_dir)
 		remove_proc_entry("udp", garble_proc_dir);
+	if (protos_proc_entry)
+		remove_proc_entry("protos", garble_proc_dir);
 	if (stats_proc_entry)
 		remove_proc_entry("stats", garble_proc_dir);
 	if (tcp_payload_proc_entry)
