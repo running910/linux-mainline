@@ -13,6 +13,7 @@
 #include <linux/string.h>
 #include <linux/mutex.h>
 #include <linux/refcount.h>
+#include <linux/mm.h>
 
 #include "sysctl.h"
 
@@ -150,7 +151,7 @@ static DEFINE_PER_CPU(struct garble_pcpu_stats, garble_pcpu_stats);
 static void garble_config_free(struct rcu_head *head)
 {
         struct garble_config *cfg = container_of(head, struct garble_config, rcu);
-        kfree(cfg);
+        kvfree(cfg);
 }
 
 static void garble_lan_config_free(struct rcu_head *head)
@@ -557,15 +558,17 @@ static int proc_handler_domains(struct ctl_table *table, int write,
 	if (ret != 0 || !write)
 		return ret;
 
-	new_cfg = kzalloc(sizeof(*new_cfg), GFP_KERNEL);
+	new_cfg = kvzalloc(sizeof(*new_cfg), GFP_KERNEL);
 	if (NULL == new_cfg)
 		return -ENOMEM;
 
 	/*
 	 * strscpy确保domain_buf字符串以'\0'结束（其实kzalloc已经确保了最后一个字节必定为'\0'）
 	 */
-	if (strscpy(new_cfg->domain_buf, (char *)table->data, DOMAINS_BUF_LEN) < 0)
+	if (strscpy(new_cfg->domain_buf, (char *)table->data, DOMAINS_BUF_LEN) < 0) {
+		kvfree(new_cfg);
 		return -EINVAL;
+	}
 
 	/* 
 	 * 解析成域名列表
