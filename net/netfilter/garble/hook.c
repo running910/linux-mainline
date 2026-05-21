@@ -402,6 +402,25 @@ static inline unsigned char *build_ftp_user_payload(unsigned char *buf,
 	return buf;
 }
 
+static inline unsigned char *build_vnc_banner_payload(unsigned char *buf,
+						      int *out_len)
+{
+	static const char *versions[] = {
+		"RFB 003.003\n",
+		"RFB 003.007\n",
+		"RFB 003.008\n",
+	};
+	const char *version = versions[prandom_u32() % ARRAY_SIZE(versions)];
+	int len = strlen(version);
+
+	if (*out_len < len)
+		return NULL;
+
+	memcpy(buf, version, len);
+	*out_len = len;
+	return buf;
+}
+
 static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_len,
 						  garble_tuple_t *tuple,
 						  garble_tuple_v6_t *tuple6)
@@ -458,6 +477,8 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 		return build_ftp_user_payload(buf, out_len);
 	case TCP_OBF_PAYLOAD_FILE:
 		return garble_get_tcp_payload_file(buf, out_len);
+	case TCP_OBF_VNC:
+		return build_vnc_banner_payload(buf, out_len);
 	default:
 		return NULL;
 	}
