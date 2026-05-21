@@ -204,6 +204,7 @@ static const char * const garble_tcp_obf_proto_names[][GARBLE_OBF_PROTO_NAME_MAX
 	[TCP_OBF_FTP_USER] = { "ftp_user", "ftp" },
 	[TCP_OBF_PAYLOAD_FILE] = { "payload_file", "file" },
 	[TCP_OBF_VNC] = { "vnc", "vnc" },
+	[TCP_OBF_THRIFT] = { "thrift", "thrift_call" },
 };
 
 static const char *garble_obf_proto_name(

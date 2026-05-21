@@ -421,6 +421,83 @@ static inline unsigned char *build_vnc_banner_payload(unsigned char *buf,
 	return buf;
 }
 
+static inline unsigned char *build_thrift_call_payload(unsigned char *buf,
+						       int *out_len)
+{
+	static const char *methods[] = {
+		"ping",
+		"execute",
+		"get",
+		"getStatus",
+		"getConfig",
+		"query",
+		"lookup",
+		"openSession",
+		"heartbeat",
+		"report",
+		"update",
+		"getInfo",
+		"closeSession",
+		"submitJob",
+		"getJobStatus",
+		"cancelJob",
+		"listSessions",
+		"listJobs",
+		"fetchResults",
+		"getVersion",
+		"getMetrics",
+		"getLogs",
+		"getUsers",
+		"getData",
+		"setData",
+		"deleteData",
+		"createUser",
+		"deleteUser",
+		"changePassword",
+		"addNode",
+		"removeNode",
+		"getClusterInfo",
+		"getNodeInfo",
+		"getSystemInfo",
+	};
+	unsigned char *ptr = buf;
+	const char *method = methods[prandom_u32() % ARRAY_SIZE(methods)];
+	int method_len = strlen(method);
+	u32 arg_len = 16;
+	bool framed = prandom_u32() & 1;
+	bool with_data = prandom_u32() & 1;
+	int body_len = 4 + 4 + method_len + 4 + 1;
+	int len = body_len + (framed ? 4 : 0);
+
+	if (with_data) {
+		body_len += 1 + 2 + 4 + arg_len;
+		len += 1 + 2 + 4 + arg_len;
+	}
+
+	if (*out_len < len)
+		return NULL;
+
+	if (framed)
+		ptr = garble_tcp_put_be32(ptr, body_len);
+
+	ptr = garble_tcp_put_be32(ptr, 0x80010001);
+	ptr = garble_tcp_put_be32(ptr, method_len);
+	memcpy(ptr, method, method_len);
+	ptr += method_len;
+	ptr = garble_tcp_put_be32(ptr, prandom_u32());
+	if (with_data) {
+		*ptr++ = 0x0b;
+		ptr = garble_tcp_put_be16(ptr, 1);
+		ptr = garble_tcp_put_be32(ptr, arg_len);
+		get_random_bytes(ptr, arg_len);
+		ptr += arg_len;
+	}
+	*ptr++ = 0;
+
+	*out_len = ptr - buf;
+	return buf;
+}
+
 static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_len,
 						  garble_tuple_t *tuple,
 						  garble_tuple_v6_t *tuple6)
@@ -479,6 +556,8 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 		return garble_get_tcp_payload_file(buf, out_len);
 	case TCP_OBF_VNC:
 		return build_vnc_banner_payload(buf, out_len);
+	case TCP_OBF_THRIFT:
+		return build_thrift_call_payload(buf, out_len);
 	default:
 		return NULL;
 	}

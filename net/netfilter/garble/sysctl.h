@@ -122,6 +122,7 @@ enum tcp_obf_proto {
 	TCP_OBF_FTP_USER = 6,
 	TCP_OBF_PAYLOAD_FILE = 7,
 	TCP_OBF_VNC = 8,
+	TCP_OBF_THRIFT = 9,
 
 	TCP_OBF_PROTO_MAX
 };
