@@ -15,6 +15,7 @@ Custom binary payloads and counters are exposed through:
 /proc/garble/tcp/payload_file/
 /proc/garble/udp/payload_file/
 /proc/garble/stats
+/proc/garble/protos
 ```
 
 ## Basic switches
@@ -77,6 +78,8 @@ Supported TCP profiles:
 | 5 | `mqtt` / `mqtt_connect` | MQTT CONNECT |
 | 6 | `ftp` / `ftp_user` | FTP `USER ...\r\n` command |
 | 7 | `payload_file` / `file` | Random payload file under `/proc/garble/tcp/payload_file/` |
+| 8 | `vnc` / `rfb` | VNC/RFB server version banner |
+| 9 | `thrift` / `thrift_call` | Thrift binary protocol CALL |
 
 Examples:
 
@@ -84,6 +87,8 @@ Examples:
 sysctl -w net.garble.tcp_obf_proto=ssh
 sysctl -w net.garble.tcp_obf_proto=0,2,5
 sysctl -w net.garble.tcp_obf_proto=tls,ssh,mqtt,ftp
+sysctl -w net.garble.tcp_obf_proto=vnc
+sysctl -w net.garble.tcp_obf_proto=thrift
 sysctl -w net.garble.tcp_obf_proto=payload_file
 sysctl -w net.garble.tcp_obf_proto=
 ```
