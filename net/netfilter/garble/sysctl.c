@@ -52,6 +52,7 @@ struct garble_udp_obf_config {
 struct garble_tcp_obf_config {
 	char proto_buf[TCP_OBF_PROTOS_BUF_LEN];
 	unsigned long mask;
+	int weights[TCP_OBF_PROTO_MAX];
 	struct rcu_head rcu;
 };
 
@@ -464,6 +465,14 @@ static struct garble_tcp_obf_config *garble_parse_tcp_obf_protos(const char *src
 	char *token;
 	struct garble_tcp_obf_config *cfg;
 	int proto;
+	int weight;
+	int explicit_weight = 0;
+	int unspecified_count = 0;
+	int unspecified_proto[TCP_OBF_PROTO_MAX];
+	int remaining;
+	int base_weight;
+	int extra_weight;
+	char *weight_str;
 
 	if (!src)
 		return NULL;
@@ -483,16 +492,103 @@ static struct garble_tcp_obf_config *garble_parse_tcp_obf_protos(const char *src
 		if (*token == '\0')
 			continue;
 
+		weight_str = strchr(token, '=');
+		if (weight_str) {
+			*weight_str++ = '\0';
+			token = strim(token);
+			weight_str = strim(weight_str);
+			if (*token == '\0' || *weight_str == '\0' ||
+			    kstrtoint(weight_str, 0, &weight) ||
+			    weight <= 0 || weight > 1000) {
+				kfree(cfg);
+				return NULL;
+			}
+		}
+
 		proto = garble_tcp_obf_proto_from_token(token);
 		if (proto < 0) {
 			kfree(cfg);
 			return NULL;
 		}
+		if (cfg->mask & BIT(proto)) {
+			kfree(cfg);
+			return NULL;
+		}
 
 		cfg->mask |= BIT(proto);
+		if (weight_str) {
+			cfg->weights[proto] = weight;
+			explicit_weight += weight;
+			if (explicit_weight > 1000) {
+				kfree(cfg);
+				return NULL;
+			}
+		} else {
+			unspecified_proto[unspecified_count++] = proto;
+		}
+	}
+
+	if (!cfg->mask)
+		return cfg;
+
+	remaining = 1000 - explicit_weight;
+	if (unspecified_count) {
+		if (remaining <= 0) {
+			kfree(cfg);
+			return NULL;
+		}
+
+		base_weight = remaining / unspecified_count;
+		extra_weight = remaining % unspecified_count;
+		if (!base_weight) {
+			kfree(cfg);
+			return NULL;
+		}
+
+		for (proto = 0; proto < unspecified_count; proto++) {
+			int unspecified = unspecified_proto[proto];
+
+			cfg->weights[unspecified] = base_weight;
+			if (extra_weight > 0) {
+				cfg->weights[unspecified]++;
+				extra_weight--;
+			}
+		}
+	} else if (explicit_weight != 1000) {
+		kfree(cfg);
+		return NULL;
 	}
 
 	return cfg;
+}
+
+static void garble_format_tcp_obf_proto_weights(char *buf, size_t size,
+						struct garble_tcp_obf_config *cfg)
+{
+	size_t pos = 0;
+	int i;
+
+	if (!size)
+		return;
+
+	if (!cfg || !cfg->mask) {
+		scnprintf(buf, size, "(disabled)");
+		return;
+	}
+
+	buf[0] = '\0';
+	for (i = 0; i < TCP_OBF_PROTO_MAX; i++) {
+		if (!(cfg->mask & BIT(i)))
+			continue;
+
+		pos += scnprintf(buf + pos, size - pos, "%s%s(%d)=%d",
+				 pos ? "," : "",
+				 garble_obf_proto_name(garble_tcp_obf_proto_names,
+						       TCP_OBF_PROTO_MAX, i),
+				 i, cfg->weights[i]);
+		if (pos >= size)
+			break;
+	}
 }
 
 static int proc_handler_tcp_obf_protos(struct ctl_table *table, int write,
@@ -536,10 +632,8 @@ static int proc_handler_tcp_obf_protos(struct ctl_table *table, int write,
 	if (old_cfg)
 		call_rcu(&old_cfg->rcu, garble_tcp_obf_config_free);
 
-	garble_format_obf_proto_mask(proto_list, sizeof(proto_list),
-				     new_cfg->mask,
-				     garble_tcp_obf_proto_names,
-				     TCP_OBF_PROTO_MAX);
+	garble_format_tcp_obf_proto_weights(proto_list, sizeof(proto_list),
+					    new_cfg);
 	pr_info("garble: tcp_obf_proto updated to %s [%s]\n",
 		new_cfg->mask ? tmp : "(disabled)", proto_list);
 
@@ -1940,33 +2034,36 @@ inline int garble_get_udp_obf_proto(void)
 inline int garble_get_tcp_obf_proto(void)
 {
 	struct garble_tcp_obf_config *cfg;
-	unsigned long mask;
-	int count = 0;
+	int total_weight = 0;
 	int target;
 	int i;
 
 	rcu_read_lock();
 	cfg = rcu_dereference(garble_tcp_obf_cfg_ptr);
-	mask = cfg ? cfg->mask : BIT(TCP_OBF_TLS_CLIENTHELLO);
-
-	for (i = 0; i < TCP_OBF_PROTO_MAX; i++) {
-		if (mask & BIT(i))
-			count++;
-	}
-
-	if (!count) {
+	if (!cfg || !cfg->mask) {
 		rcu_read_unlock();
 		return TCP_OBF_TLS_CLIENTHELLO;
 	}
 
-	target = prandom_u32() % count;
 	for (i = 0; i < TCP_OBF_PROTO_MAX; i++) {
-		if (!(mask & BIT(i)))
+		if (cfg->mask & BIT(i))
+			total_weight += cfg->weights[i];
+	}
+
+	if (total_weight <= 0) {
+		rcu_read_unlock();
+		return TCP_OBF_TLS_CLIENTHELLO;
+	}
+
+	target = prandom_u32() % total_weight;
+	for (i = 0; i < TCP_OBF_PROTO_MAX; i++) {
+		if (!(cfg->mask & BIT(i)))
 			continue;
-		if (target-- == 0) {
+		if (target < cfg->weights[i]) {
 			rcu_read_unlock();
 			return i;
 		}
+		target -= cfg->weights[i];
 	}
 
 	rcu_read_unlock();
