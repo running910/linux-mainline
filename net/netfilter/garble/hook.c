@@ -17,6 +17,7 @@
 #include "packet.h"
 #include "stun.h"
 #include "sip.h"
+#include "http.h"
 
 
 #define LOOPBACK_MASK           0Xff000000
@@ -53,10 +54,6 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
 
 inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
-inline unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
-inline unsigned char *build_http_download_request(unsigned char *buf, int *len, const char *host);
-inline unsigned char *build_http_search_request(unsigned char *buf, int *len);
-inline unsigned char *build_http_search_request_by_template(unsigned char *buf, int *len, int template_id);
 inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
 					garble_tuple_t *tuple,
 					garble_tuple_v6_t *tuple6);
@@ -64,10 +61,6 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
 #else
 
 extern unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
-extern unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
-extern unsigned char *build_http_download_request(unsigned char *buf, int *len, const char *host);
-extern unsigned char *build_http_search_request(unsigned char *buf, int *len);
-extern unsigned char *build_http_search_request_by_template(unsigned char *buf, int *len, int template_id);
 extern unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
 					garble_tuple_t *tuple,
 					garble_tuple_v6_t *tuple6);
