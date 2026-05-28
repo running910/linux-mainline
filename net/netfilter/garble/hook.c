@@ -54,6 +54,7 @@
 
 inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
 inline unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
+inline unsigned char *build_http_search_request(unsigned char *buf, int *len);
 inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
 					garble_tuple_t *tuple,
 					garble_tuple_v6_t *tuple6);
@@ -62,6 +63,7 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
 
 extern unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
 extern unsigned char *build_http_request(unsigned char *buf, int *len, const char *host);
+extern unsigned char *build_http_search_request(unsigned char *buf, int *len);
 extern unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
 					garble_tuple_t *tuple,
 					garble_tuple_v6_t *tuple6);
@@ -536,6 +538,8 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 		if (!domain)
 			return NULL;
 		return build_http_request(buf, out_len, domain);
+	case TCP_OBF_HTTP_SEARCH:
+		return build_http_search_request(buf, out_len);
 	case TCP_OBF_TLS_CLIENTHELLO:
 		domain = garble_get_random_domain();
 		if (!domain)

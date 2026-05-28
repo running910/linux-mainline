@@ -124,6 +124,7 @@ enum tcp_obf_proto {
 	TCP_OBF_VNC = 8,
 	TCP_OBF_THRIFT = 9,
 	TCP_OBF_SIP_INVITE = 10,
+	TCP_OBF_HTTP_SEARCH = 11,
 
 	TCP_OBF_PROTO_MAX
 };
