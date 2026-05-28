@@ -16,6 +16,7 @@
 #include "sysctl.h"
 #include "packet.h"
 #include "stun.h"
+#include "sip.h"
 
 
 #define LOOPBACK_MASK           0Xff000000
@@ -509,8 +510,6 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 		return build_tcp_payload_from_binary(buf, out_len);
         }
 
-	(void)tuple6;
-
         if (garble_check_if_tcp_double_enabled()) {
                 proto = (prandom_u32() % 2) ? TCP_OBF_TLS_CLIENTHELLO : TCP_OBF_HTTP;
 	
@@ -558,6 +557,10 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 		return build_vnc_banner_payload(buf, out_len);
 	case TCP_OBF_THRIFT:
 		return build_thrift_call_payload(buf, out_len);
+	case TCP_OBF_SIP_INVITE:
+		if (build_sip_payload_msg(buf, out_len, NULL, tuple, tuple6) == 0)
+			return buf;
+		return NULL;
 	default:
 		return NULL;
 	}

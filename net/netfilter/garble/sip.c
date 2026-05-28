@@ -2,6 +2,7 @@
 #include <linux/string.h>
 #include <linux/random.h>
 
+#include "email.h"
 #include "packet.h"
 #include "sysctl.h"
 
@@ -49,7 +50,7 @@ inline int build_sip_payload_msg(unsigned char *buffer, int *len,
 	char remote_sdp[64];
 	const char *addr_type = "IP4";
 	char sdp_buf[180];
-	char username[13];	/* 4-12 characters + null terminator */
+	char username[64];
 	const char *username_ptr;
 	unsigned long rand_ul[5];
 	int len_, buffsize;
@@ -65,15 +66,19 @@ inline int build_sip_payload_msg(unsigned char *buffer, int *len,
 	/* Generate random values */
 	get_random_bytes(rand_ul, sizeof(rand_ul));
 
-	/* Generate random username (4-12 characters: letters and numbers) */
-	get_random_bytes(&random_byte, sizeof(random_byte));
-	username_len = 4 + (random_byte % 9);	/* 4-12 range */
-	
-	for (i = 0; i < username_len; i++) {
+	if (prandom_u32() % 100 < 90) {
+		strscpy(username, get_email_name(), sizeof(username));
+	} else {
+		/* Generate random username (4-12 characters: letters and numbers) */
 		get_random_bytes(&random_byte, sizeof(random_byte));
-		username[i] = char_set[random_byte % (sizeof(char_set) - 1)];
+		username_len = 4 + (random_byte % 9);	/* 4-12 range */
+
+		for (i = 0; i < username_len; i++) {
+			get_random_bytes(&random_byte, sizeof(random_byte));
+			username[i] = char_set[random_byte % (sizeof(char_set) - 1)];
+		}
+		username[username_len] = '\0';
 	}
-	username[username_len] = '\0';
 	username_ptr = username;
 
 	if (tuple) {
