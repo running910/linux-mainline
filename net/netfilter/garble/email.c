@@ -7,9 +7,13 @@
 
 #define EMAIL_NAME_BUF_COUNT	64
 #define EMAIL_NAME_BUF_LEN	64
+#define EMAIL_ADDR_BUF_COUNT	64
+#define EMAIL_ADDR_BUF_LEN	128
 
 static char email_name_buf[EMAIL_NAME_BUF_COUNT][EMAIL_NAME_BUF_LEN];
+static char email_addr_buf[EMAIL_ADDR_BUF_COUNT][EMAIL_ADDR_BUF_LEN];
 static atomic_t email_name_idx = ATOMIC_INIT(0);
+static atomic_t email_addr_idx = ATOMIC_INIT(0);
 
 static const char *email_surnames[] = {
 	"wang", "li", "zhang", "liu", "chen", "yang", "zhao", "huang",
@@ -46,6 +50,63 @@ static const char *email_seps[] = {
 	"", "", "", "_", "_", ".", "-"
 };
 
+static const char *email_domains[] = {
+	"163.com",
+	"qq.com",
+	"126.com",
+	"foxmail.com",
+	"aliyun.com",
+	"139.com",
+	"sina.com",
+	"sina.cn",
+	"outlook.com",
+	"hotmail.com",
+	"yeah.net",
+	"188.com",
+	"sohu.com",
+	"21cn.com",
+	"189.com",
+	"gmail.com",
+	"yahoo.com",
+	"outlook.com",
+	"hotmail.com",
+	"live.com",
+	"msn.com",
+	"icloud.com",
+	"me.com",
+	"mac.com",
+	"aol.com",
+	"proton.me",
+	"protonmail.com",
+	"zoho.com",
+	"gmx.com",
+	"gmx.net",
+	"mail.com",
+	"yandex.com",
+	"qq.com",
+	"foxmail.com",
+	"vip.qq.com",
+	"163.com",
+	"126.com",
+	"yeah.net",
+	"sina.com",
+	"sina.cn",
+	"sohu.com",
+	"aliyun.com",
+	"tom.com",
+	"139.com",
+	"189.cn",
+	"21cn.com",
+	"naver.com",
+	"daum.net",
+	"hanmail.net",
+	"nate.com",
+	"kakao.com",
+	"rediffmail.com",
+	"indiatimes.com",
+	"sify.com",
+};
+
 static inline const char *email_pick(const char * const items[], int count)
 {
 	return items[prandom_u32() % count];
@@ -66,6 +127,13 @@ static inline char *email_next_buf(void)
 	u32 idx = (u32)atomic_inc_return(&email_name_idx);
 
 	return email_name_buf[idx % EMAIL_NAME_BUF_COUNT];
+}
+
+static inline char *email_next_addr_buf(void)
+{
+	u32 idx = (u32)atomic_inc_return(&email_addr_idx);
+
+	return email_addr_buf[idx % EMAIL_ADDR_BUF_COUNT];
 }
 
 static void email_make_given(char *buf, size_t len)
@@ -118,6 +186,17 @@ inline const char *get_email_name(void)
 		scnprintf(buf, EMAIL_NAME_BUF_LEN, "%s%s%02d", given, surname,
 			  month);
 	}
+
+	return buf;
+}
+
+inline const char *get_email(void)
+{
+	const char *name = get_email_name();
+	const char *domain = email_pick(email_domains, ARRAY_SIZE(email_domains));
+	char *buf = email_next_addr_buf();
+
+	scnprintf(buf, EMAIL_ADDR_BUF_LEN, "%s@%s", name, domain);
 
 	return buf;
 }
