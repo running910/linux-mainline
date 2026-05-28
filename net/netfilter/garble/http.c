@@ -369,6 +369,28 @@ enum http_search_header_profile {
 	HTTP_SEARCH_HEADER_IMOOC,
 };
 
+enum http_search_template_id {
+	HTTP_SEARCH_TEMPLATE_TIEBA,
+	HTTP_SEARCH_TEMPLATE_C_TIEBA,
+	HTTP_SEARCH_TEMPLATE_DEEPSEEK_SCHOLAR,
+	HTTP_SEARCH_TEMPLATE_DEEPSEEK_KNS,
+	HTTP_SEARCH_TEMPLATE_ICOURSE163,
+	HTTP_SEARCH_TEMPLATE_MOOC_STUDY_163,
+	HTTP_SEARCH_TEMPLATE_KE_QQ,
+	HTTP_SEARCH_TEMPLATE_H5_KE_QQ,
+	HTTP_SEARCH_TEMPLATE_XHS_WWW,
+	HTTP_SEARCH_TEMPLATE_XHS_API,
+	HTTP_SEARCH_TEMPLATE_XHS_CREATOR,
+	HTTP_SEARCH_TEMPLATE_XIMALAYA_MOBILE,
+	HTTP_SEARCH_TEMPLATE_XIMALAYA_API,
+	HTTP_SEARCH_TEMPLATE_OPEN_163,
+	HTTP_SEARCH_TEMPLATE_VOD_OPEN_163,
+	HTTP_SEARCH_TEMPLATE_IMOOC,
+	HTTP_SEARCH_TEMPLATE_CODING_IMOOC,
+
+	HTTP_SEARCH_TEMPLATE_MAX
+};
+
 static const char * const http_search_tieba_keywords[] = {
 	"原神",
 	"英雄联盟",
@@ -1315,24 +1337,24 @@ static const char * const http_search_course_mts[] = {
 	"postgraduate",
 };
 
-static const struct http_search_template http_search_templates[] = {
-	{ "tieba.baidu.com", "/f?kw=%s&pn=%u", "https://tieba.baidu.com/", HTTP_SEARCH_HEADER_TIEBA, http_search_tieba_keywords, ARRAY_SIZE(http_search_tieba_keywords), NULL, 0 },
-	{ "c.tieba.baidu.com", "/f?kw=%s&pn=%u", "https://tieba.baidu.com/", HTTP_SEARCH_HEADER_TIEBA, http_search_tieba_keywords, ARRAY_SIZE(http_search_tieba_keywords), NULL, 0 },
-	{ "www.deepseek.com", "/scholar?q=%s&start=%u&tn=scholar", "https://scholar.baidu.com/", HTTP_SEARCH_HEADER_DEEPSEEK_SCHOLAR, http_search_scholar_keywords, ARRAY_SIZE(http_search_scholar_keywords), NULL, 0 },
-	{ "www.deepseek.com", "/kns/brief/result.aspx?dbprefix=CFLS&keyValue=%s&page=%u", "https://www.deepseek.com/", HTTP_SEARCH_HEADER_DEEPSEEK_KNS, http_search_kns_keywords, ARRAY_SIZE(http_search_kns_keywords), NULL, 0 },
-	{ "www.icourse163.org", "/search.htm?search=%s", "https://www.icourse163.org/", HTTP_SEARCH_HEADER_ICOURSE163, http_search_mooc_keywords, ARRAY_SIZE(http_search_mooc_keywords), NULL, 0 },
-	{ "mooc.study.163.com", "/search.htm?search=%s", "https://www.icourse163.org/", HTTP_SEARCH_HEADER_ICOURSE163, http_search_mooc_keywords, ARRAY_SIZE(http_search_mooc_keywords), NULL, 0 },
-	{ "ke.qq.com", "/cgi-bin/search?keyword=%s&page=%u", "https://ke.qq.com/", HTTP_SEARCH_HEADER_KEQQ, http_search_course_keywords, ARRAY_SIZE(http_search_course_keywords), NULL, 0 },
-	{ "h5.ke.qq.com", "/cgi-bin/course_list?mt=%s&page=%u&keyword=%s", "https://ke.qq.com/", HTTP_SEARCH_HEADER_KEQQ, http_search_course_keywords, ARRAY_SIZE(http_search_course_keywords), http_search_course_mts, ARRAY_SIZE(http_search_course_mts) },
-	{ "www.xiaohongshu.com", "/api/sns/v3/search/note?keyword=%s&sort=%s&page=1&size=20", "https://www.xiaohongshu.com/", HTTP_SEARCH_HEADER_XHS, http_search_xhs_keywords, ARRAY_SIZE(http_search_xhs_keywords), http_search_xhs_sorts, ARRAY_SIZE(http_search_xhs_sorts) },
-	{ "api.xiaohongshu.com", "/api/sns/v3/search/note?keyword=%s&sort=%s&page=1&size=20", "https://www.xiaohongshu.com/", HTTP_SEARCH_HEADER_XHS, http_search_xhs_keywords, ARRAY_SIZE(http_search_xhs_keywords), http_search_xhs_sorts, ARRAY_SIZE(http_search_xhs_sorts) },
-	{ "creator.xiaohongshu.com", "/api/sns/v3/search/note?keyword=%s&sort=%s&page=1&size=20", "https://www.xiaohongshu.com/", HTTP_SEARCH_HEADER_XHS, http_search_xhs_keywords, ARRAY_SIZE(http_search_xhs_keywords), http_search_xhs_sorts, ARRAY_SIZE(http_search_xhs_sorts) },
-	{ "mobile.ximalaya.com", "/search/%s/?page=%u", "https://www.ximalaya.com/", HTTP_SEARCH_HEADER_XIMALAYA, http_search_ximalaya_keywords, ARRAY_SIZE(http_search_ximalaya_keywords), NULL, 0 },
-	{ "api.ximalaya.com", "/search/%s/?page=%u", "https://www.ximalaya.com/", HTTP_SEARCH_HEADER_XIMALAYA, http_search_ximalaya_keywords, ARRAY_SIZE(http_search_ximalaya_keywords), NULL, 0 },
-	{ "open.163.com", "/search/search.htm?query=%s&page=%u", "https://open.163.com/", HTTP_SEARCH_HEADER_OPEN163, http_search_open163_keywords, ARRAY_SIZE(http_search_open163_keywords), NULL, 0 },
-	{ "vod.open.163.com", "/search/search.htm?query=%s&page=%u", "https://open.163.com/", HTTP_SEARCH_HEADER_OPEN163, http_search_open163_keywords, ARRAY_SIZE(http_search_open163_keywords), NULL, 0 },
-	{ "www.imooc.com", "/search/?words=%s&page=%u", "https://www.imooc.com/", HTTP_SEARCH_HEADER_IMOOC, http_search_imooc_keywords, ARRAY_SIZE(http_search_imooc_keywords), NULL, 0 },
-	{ "coding.imooc.com", "/search/?words=%s&page=%u", "https://www.imooc.com/", HTTP_SEARCH_HEADER_IMOOC, http_search_imooc_keywords, ARRAY_SIZE(http_search_imooc_keywords), NULL, 0 },
+static const struct http_search_template http_search_templates[HTTP_SEARCH_TEMPLATE_MAX] = {
+	[HTTP_SEARCH_TEMPLATE_TIEBA] = { "tieba.baidu.com", "/f?kw=%s&pn=%u", "https://tieba.baidu.com/", HTTP_SEARCH_HEADER_TIEBA, http_search_tieba_keywords, ARRAY_SIZE(http_search_tieba_keywords), NULL, 0 },
+	[HTTP_SEARCH_TEMPLATE_C_TIEBA] = { "c.tieba.baidu.com", "/f?kw=%s&pn=%u", "https://tieba.baidu.com/", HTTP_SEARCH_HEADER_TIEBA, http_search_tieba_keywords, ARRAY_SIZE(http_search_tieba_keywords), NULL, 0 },
+	[HTTP_SEARCH_TEMPLATE_DEEPSEEK_SCHOLAR] = { "www.deepseek.com", "/scholar?q=%s&start=%u&tn=scholar", "https://scholar.baidu.com/", HTTP_SEARCH_HEADER_DEEPSEEK_SCHOLAR, http_search_scholar_keywords, ARRAY_SIZE(http_search_scholar_keywords), NULL, 0 },
+	[HTTP_SEARCH_TEMPLATE_DEEPSEEK_KNS] = { "www.deepseek.com", "/kns/brief/result.aspx?dbprefix=CFLS&keyValue=%s&page=%u", "https://www.deepseek.com/", HTTP_SEARCH_HEADER_DEEPSEEK_KNS, http_search_kns_keywords, ARRAY_SIZE(http_search_kns_keywords), NULL, 0 },
+	[HTTP_SEARCH_TEMPLATE_ICOURSE163] = { "www.icourse163.org", "/search.htm?search=%s", "https://www.icourse163.org/", HTTP_SEARCH_HEADER_ICOURSE163, http_search_mooc_keywords, ARRAY_SIZE(http_search_mooc_keywords), NULL, 0 },
+	[HTTP_SEARCH_TEMPLATE_MOOC_STUDY_163] = { "mooc.study.163.com", "/search.htm?search=%s", "https://www.icourse163.org/", HTTP_SEARCH_HEADER_ICOURSE163, http_search_mooc_keywords, ARRAY_SIZE(http_search_mooc_keywords), NULL, 0 },
+	[HTTP_SEARCH_TEMPLATE_KE_QQ] = { "ke.qq.com", "/cgi-bin/search?keyword=%s&page=%u", "https://ke.qq.com/", HTTP_SEARCH_HEADER_KEQQ, http_search_course_keywords, ARRAY_SIZE(http_search_course_keywords), NULL, 0 },
+	[HTTP_SEARCH_TEMPLATE_H5_KE_QQ] = { "h5.ke.qq.com", "/cgi-bin/course_list?mt=%s&page=%u&keyword=%s", "https://ke.qq.com/", HTTP_SEARCH_HEADER_KEQQ, http_search_course_keywords, ARRAY_SIZE(http_search_course_keywords), http_search_course_mts, ARRAY_SIZE(http_search_course_mts) },
+	[HTTP_SEARCH_TEMPLATE_XHS_WWW] = { "www.xiaohongshu.com", "/api/sns/v3/search/note?keyword=%s&sort=%s&page=1&size=20", "https://www.xiaohongshu.com/", HTTP_SEARCH_HEADER_XHS, http_search_xhs_keywords, ARRAY_SIZE(http_search_xhs_keywords), http_search_xhs_sorts, ARRAY_SIZE(http_search_xhs_sorts) },
+	[HTTP_SEARCH_TEMPLATE_XHS_API] = { "api.xiaohongshu.com", "/api/sns/v3/search/note?keyword=%s&sort=%s&page=1&size=20", "https://www.xiaohongshu.com/", HTTP_SEARCH_HEADER_XHS, http_search_xhs_keywords, ARRAY_SIZE(http_search_xhs_keywords), http_search_xhs_sorts, ARRAY_SIZE(http_search_xhs_sorts) },
+	[HTTP_SEARCH_TEMPLATE_XHS_CREATOR] = { "creator.xiaohongshu.com", "/api/sns/v3/search/note?keyword=%s&sort=%s&page=1&size=20", "https://www.xiaohongshu.com/", HTTP_SEARCH_HEADER_XHS, http_search_xhs_keywords, ARRAY_SIZE(http_search_xhs_keywords), http_search_xhs_sorts, ARRAY_SIZE(http_search_xhs_sorts) },
+	[HTTP_SEARCH_TEMPLATE_XIMALAYA_MOBILE] = { "mobile.ximalaya.com", "/search/%s/?page=%u", "https://www.ximalaya.com/", HTTP_SEARCH_HEADER_XIMALAYA, http_search_ximalaya_keywords, ARRAY_SIZE(http_search_ximalaya_keywords), NULL, 0 },
+	[HTTP_SEARCH_TEMPLATE_XIMALAYA_API] = { "api.ximalaya.com", "/search/%s/?page=%u", "https://www.ximalaya.com/", HTTP_SEARCH_HEADER_XIMALAYA, http_search_ximalaya_keywords, ARRAY_SIZE(http_search_ximalaya_keywords), NULL, 0 },
+	[HTTP_SEARCH_TEMPLATE_OPEN_163] = { "open.163.com", "/search/search.htm?query=%s&page=%u", "https://open.163.com/", HTTP_SEARCH_HEADER_OPEN163, http_search_open163_keywords, ARRAY_SIZE(http_search_open163_keywords), NULL, 0 },
+	[HTTP_SEARCH_TEMPLATE_VOD_OPEN_163] = { "vod.open.163.com", "/search/search.htm?query=%s&page=%u", "https://open.163.com/", HTTP_SEARCH_HEADER_OPEN163, http_search_open163_keywords, ARRAY_SIZE(http_search_open163_keywords), NULL, 0 },
+	[HTTP_SEARCH_TEMPLATE_IMOOC] = { "www.imooc.com", "/search/?words=%s&page=%u", "https://www.imooc.com/", HTTP_SEARCH_HEADER_IMOOC, http_search_imooc_keywords, ARRAY_SIZE(http_search_imooc_keywords), NULL, 0 },
+	[HTTP_SEARCH_TEMPLATE_CODING_IMOOC] = { "coding.imooc.com", "/search/?words=%s&page=%u", "https://www.imooc.com/", HTTP_SEARCH_HEADER_IMOOC, http_search_imooc_keywords, ARRAY_SIZE(http_search_imooc_keywords), NULL, 0 },
 };
 
 static const char * const http_search_accepts[] = {
@@ -1389,7 +1411,9 @@ static int build_http_search_cookie(char *buf, size_t size,
 	}
 }
 
-inline unsigned char *build_http_search_request(unsigned char *buf, int *len)
+inline unsigned char *build_http_search_request_by_template(unsigned char *buf,
+							    int *len,
+							    int template_id)
 {
 	char path[256];
 	char referer_header[288] = "";
@@ -1406,7 +1430,15 @@ inline unsigned char *build_http_search_request(unsigned char *buf, int *len)
 	const char *ua;
 	u32 page;
 
-	tpl = &http_search_templates[prandom_u32() % ARRAY_SIZE(http_search_templates)];
+	if (template_id < 0)
+		template_id = prandom_u32() % HTTP_SEARCH_TEMPLATE_MAX;
+	if (template_id >= HTTP_SEARCH_TEMPLATE_MAX)
+		return NULL;
+
+	tpl = &http_search_templates[template_id];
+	if (!tpl->host || !tpl->path_fmt || !tpl->keywords || !tpl->keyword_count)
+		return NULL;
+
 	keyword = tpl->keywords[prandom_u32() % tpl->keyword_count];
 	extra = tpl->extra_count ? tpl->extra[prandom_u32() % tpl->extra_count] : NULL;
 	ua = http_user_agents[prandom_u32() % ARRAY_SIZE(http_user_agents)];
@@ -1529,4 +1561,9 @@ inline unsigned char *build_http_search_request(unsigned char *buf, int *len)
 	*len = len_;
 
 	return buf;
+}
+
+inline unsigned char *build_http_search_request(unsigned char *buf, int *len)
+{
+	return build_http_search_request_by_template(buf, len, -1);
 }
