@@ -1,6 +1,11 @@
 #ifndef __GARBLE_PACKET_H__
 #define __GARBLE_PACKET_H__
 
+#include <linux/in6.h>
+
+struct net;
+struct sk_buff;
+
 typedef struct garble_tuple_type {
 	__be32 saddr;
 	__be32 daddr;
