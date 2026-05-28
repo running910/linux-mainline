@@ -1,3 +1,3 @@
-nf_garble-y := garble.o sysctl.o hook.o packet.o nfhook.o tls.o http.o udp.o stun.o sip.o
+nf_garble-y := garble.o sysctl.o hook.o packet.o nfhook.o tls.o http.o udp.o stun.o sip.o email.o
 
 obj-$(CONFIG_NF_GARBLE) += nf_garble.o
