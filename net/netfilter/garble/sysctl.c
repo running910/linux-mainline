@@ -226,6 +226,7 @@ static const char * const garble_tcp_obf_proto_names[][GARBLE_OBF_PROTO_NAME_MAX
 	[TCP_OBF_HTTP_SEARCH_IMOOC] = { "http_search_imooc", "search_imooc" },
 	[TCP_OBF_HTTP_SEARCH_CODING_IMOOC] = { "http_search_coding_imooc", "search_coding_imooc" },
 	[TCP_OBF_HTTP_DOWNLOAD] = { "http_download", "download" },
+	[TCP_OBF_TLSV1_CLIENTHELLO] = { "tlsv1_clienthello", "tlsv1" },
 };
 
 static const char *garble_obf_proto_name(

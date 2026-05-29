@@ -54,6 +54,7 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
 
 inline unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
+unsigned char *build_tlsv1_client_hello(unsigned char *buf, int *out_len, const char *sni);
 inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
 					garble_tuple_t *tuple,
 					garble_tuple_v6_t *tuple6);
@@ -61,6 +62,7 @@ inline unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
 #else
 
 extern unsigned char *build_tls_client_hello(unsigned char *buf, int *out_len, const char *sni);
+extern unsigned char *build_tlsv1_client_hello(unsigned char *buf, int *out_len, const char *sni);
 extern unsigned char *build_udp_payload(unsigned char *buf, int *out_len,
 					garble_tuple_t *tuple,
 					garble_tuple_v6_t *tuple6);
@@ -550,6 +552,11 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 		if (!domain)
 			return NULL;
 		return build_tls_client_hello(buf, out_len, domain);
+	case TCP_OBF_TLSV1_CLIENTHELLO:
+		domain = garble_get_random_domain();
+		if (!domain)
+			return NULL;
+		return build_tlsv1_client_hello(buf, out_len, domain);
 	case TCP_OBF_SSH_BANNER:
 		return build_ssh_banner_payload(buf, out_len);
 	case TCP_OBF_RTMP_HANDSHAKE:
