@@ -13,6 +13,7 @@ void garble_sysctl_exit(void);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
 inline const char *garble_get_random_domain(void);
+inline const char *garble_get_random_tls_domain(void);
 inline bool garble_check_if_tcp_enabled(void);
 inline bool garble_check_if_tcp_aggressive(void);
 inline bool garble_check_if_http_enabled(void);
@@ -54,6 +55,7 @@ inline void garble_stats_account_udp_v6(u32 bytes);
 
 #else
 extern const char *garble_get_random_domain(void);
+extern const char *garble_get_random_tls_domain(void);
 extern bool garble_check_if_tcp_enabled(void);
 extern bool garble_check_if_tcp_aggressive(void);
 extern bool garble_check_if_http_enabled(void);

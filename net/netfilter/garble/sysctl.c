@@ -77,6 +77,7 @@ struct garble_payload_blob {
 
 static int garble_enabled = 0;
 static char garble_args[DOMAINS_BUF_LEN] = "";
+static char garble_tls_args[DOMAINS_BUF_LEN] = "";
 static char garble_lan_args[LAN_NICS_BUF_LEN] = "br-virt,br-vmbr0";
 static int garble_http_enabled = 0;
 static int garble_udp_enabled = 0;
@@ -100,11 +101,13 @@ static int garble_ttl_percent = 0;                       // 0 disables dynamic T
 static char garble_udp_extra[UDP_EXTRA_BUF_LEN] ={0};   // UDP extra configuration string
 
 static struct garble_config __rcu *garble_cfg_ptr = NULL;
+static struct garble_config __rcu *garble_tls_cfg_ptr = NULL;
 static struct garble_lan_config __rcu *garble_lan_cfg_ptr = NULL;
 static struct garble_udp_obf_config __rcu *garble_udp_obf_cfg_ptr = NULL;
 static struct garble_tcp_obf_config __rcu *garble_tcp_obf_cfg_ptr = NULL;
 
 static DEFINE_SPINLOCK(garble_cfg_lock);
+static DEFINE_SPINLOCK(garble_tls_cfg_lock);
 static DEFINE_SPINLOCK(garble_lan_cfg_lock);
 static DEFINE_SPINLOCK(garble_udp_obf_cfg_lock);
 static DEFINE_SPINLOCK(garble_tcp_obf_cfg_lock);
@@ -784,6 +787,55 @@ static int proc_handler_domains(struct ctl_table *table, int write,
 	return 0;
 }
 
+static int proc_handler_domains_tls(struct ctl_table *table, int write,
+				    void __user *buffer, size_t *lenp,
+				    loff_t *ppos)
+{
+	struct garble_config *new_cfg;
+	struct garble_config *old_cfg;
+	int ret;
+	char *s;
+	char *token;
+	int i = 0;
+	unsigned long flags;
+
+	ret = proc_dostring(table, write, buffer, lenp, ppos);
+	if (ret != 0 || !write)
+		return ret;
+
+	new_cfg = kvzalloc(sizeof(*new_cfg), GFP_KERNEL);
+	if (!new_cfg)
+		return -ENOMEM;
+
+	if (strscpy(new_cfg->domain_buf, (char *)table->data,
+		    DOMAINS_BUF_LEN) < 0) {
+		kvfree(new_cfg);
+		return -EINVAL;
+	}
+
+	s = new_cfg->domain_buf;
+	while (((token = strsep(&s, ",")) != NULL) && (i < MAX_DOMAINS)) {
+		if (*token == '\0')
+			continue;
+		new_cfg->domain_list[i++] = token;
+		printk(KERN_INFO "TLS Domain[%d] = %s\n", i, token);
+	}
+	new_cfg->num_domains = i;
+
+	pr_info("garble: updated %d domains_tls\n", new_cfg->num_domains);
+
+	spin_lock_irqsave(&garble_tls_cfg_lock, flags);
+	old_cfg = rcu_dereference_protected(garble_tls_cfg_ptr,
+					    lockdep_is_held(&garble_tls_cfg_lock));
+	rcu_assign_pointer(garble_tls_cfg_ptr, new_cfg);
+	spin_unlock_irqrestore(&garble_tls_cfg_lock, flags);
+
+	if (old_cfg)
+		call_rcu(&old_cfg->rcu, garble_config_free);
+
+	return 0;
+}
+
 static struct garble_lan_config *garble_parse_lan_nics(const char *src)
 {
 	struct garble_lan_config *cfg;
@@ -1248,6 +1300,13 @@ static struct ctl_table garble_table[] = {
                 .proc_handler = proc_handler_domains,
 
         },
+	{
+		.procname   = "domains_tls",
+		.data       = garble_tls_args,
+		.maxlen     = DOMAINS_BUF_LEN,
+		.mode       = 0644,
+		.proc_handler = proc_handler_domains_tls,
+	},
         {}
 };
 
@@ -1855,6 +1914,7 @@ int garble_sysctl_init(void)
 void garble_sysctl_exit(void)
 {
 	struct garble_config *cfg;
+	struct garble_config *tls_cfg;
 	struct garble_lan_config *lan_cfg;
 	struct garble_udp_obf_config *udp_obf_cfg;
 	struct garble_tcp_obf_config *tcp_obf_cfg;
@@ -1895,6 +1955,15 @@ void garble_sysctl_exit(void)
 
 	if (NULL != cfg)
 		call_rcu(&cfg->rcu, garble_config_free);
+
+	spin_lock_irqsave(&garble_tls_cfg_lock, flags);
+	tls_cfg = rcu_dereference_protected(garble_tls_cfg_ptr,
+					    lockdep_is_held(&garble_tls_cfg_lock));
+	rcu_assign_pointer(garble_tls_cfg_ptr, NULL);
+	spin_unlock_irqrestore(&garble_tls_cfg_lock, flags);
+
+	if (tls_cfg)
+		call_rcu(&tls_cfg->rcu, garble_config_free);
 
 	spin_lock_irqsave(&garble_lan_cfg_lock, flags);
 	lan_cfg = rcu_dereference_protected(garble_lan_cfg_ptr,
@@ -2165,6 +2234,20 @@ inline const char *garble_get_random_domain(void)
 
 	rcu_read_lock();
 	cfg = rcu_dereference(garble_cfg_ptr);
+	if (cfg && (cfg->num_domains > 0))
+		domain = cfg->domain_list[prandom_u32() % cfg->num_domains];
+	rcu_read_unlock();
+
+	return domain;
+}
+
+inline const char *garble_get_random_tls_domain(void)
+{
+	const char *domain = NULL;
+	struct garble_config *cfg;
+
+	rcu_read_lock();
+	cfg = rcu_dereference(garble_tls_cfg_ptr);
 	if (cfg && (cfg->num_domains > 0))
 		domain = cfg->domain_list[prandom_u32() % cfg->num_domains];
 	rcu_read_unlock();

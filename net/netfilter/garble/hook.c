@@ -548,12 +548,12 @@ static inline unsigned char *generate_tcp_payload(unsigned char *buf, int *out_l
 			return NULL;
 		return build_http_download_request(buf, out_len, domain);
 	case TCP_OBF_TLS_CLIENTHELLO:
-		domain = garble_get_random_domain();
+		domain = garble_get_random_tls_domain();
 		if (!domain)
 			return NULL;
 		return build_tls_client_hello(buf, out_len, domain);
 	case TCP_OBF_TLSV1_CLIENTHELLO:
-		domain = garble_get_random_domain();
+		domain = garble_get_random_tls_domain();
 		if (!domain)
 			return NULL;
 		return build_tlsv1_client_hello(buf, out_len, domain);
