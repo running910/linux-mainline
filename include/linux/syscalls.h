@@ -200,6 +200,7 @@ static inline int is_syscall_trace_event(struct trace_event_call *tp_event)
 {
 	return 0;
 }
+
 #endif
 
 #ifndef SYSCALL_DEFINE0
@@ -905,6 +906,11 @@ asmlinkage long sys_mincore(unsigned long start, size_t len,
 asmlinkage long sys_madvise(unsigned long start, size_t len, int behavior);
 asmlinkage long sys_process_madvise(int pidfd, const struct iovec __user *vec,
 			size_t vlen, int behavior, unsigned int flags);
+struct wx_kernel_auth_req;
+struct wx_kernel_auth_resp;
+asmlinkage long sys_wx_kernel_auth(unsigned int cmd,
+				   struct wx_kernel_auth_req __user *ureq,
+				   struct wx_kernel_auth_resp __user *uresp);
 asmlinkage long sys_remap_file_pages(unsigned long start, unsigned long size,
 			unsigned long prot, unsigned long pgoff,
 			unsigned long flags);
