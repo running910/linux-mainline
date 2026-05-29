@@ -24,6 +24,7 @@
 #define UDP_EXTRA_BUF_LEN 512
 #define UDP_OBF_PROTOS_BUF_LEN 256
 #define TCP_OBF_PROTOS_BUF_LEN 256
+#define OBF_PROTO_WEIGHT_LOG_BUF_LEN 4096
 #define LAN_NICS_BUF_LEN 512
 #define MAX_LAN_NICS    20
 #define GARBLE_PAYLOAD_FILE_NAME_LEN 64
@@ -487,7 +488,7 @@ static int proc_handler_udp_obf_proto(struct ctl_table *table, int write,
 				    void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	char tmp[UDP_OBF_PROTOS_BUF_LEN];
-	char proto_list[256];
+	char proto_list[OBF_PROTO_WEIGHT_LOG_BUF_LEN];
 	struct garble_udp_obf_config *new_cfg;
 	struct garble_udp_obf_config *old_cfg;
 	struct ctl_table tmp_table;
@@ -683,7 +684,7 @@ static int proc_handler_tcp_obf_protos(struct ctl_table *table, int write,
 				    void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	char tmp[TCP_OBF_PROTOS_BUF_LEN];
-	char proto_list[256];
+	char proto_list[OBF_PROTO_WEIGHT_LOG_BUF_LEN];
 	struct ctl_table tmp_table;
 	struct garble_tcp_obf_config *new_cfg;
 	struct garble_tcp_obf_config *old_cfg;
@@ -1486,20 +1487,39 @@ static void garble_protos_seq_print_names(struct seq_file *m,
 
 static int garble_protos_show(struct seq_file *m, void *v)
 {
+	struct garble_tcp_obf_config *tcp_cfg;
+	struct garble_udp_obf_config *udp_cfg;
+	unsigned long tcp_mask;
+	unsigned long udp_mask;
+	int tcp_weights[TCP_OBF_PROTO_MAX] = {};
+	int udp_weights[UDP_OBF_PROTO_MAX] = {};
 	int i;
 
+	rcu_read_lock();
+	tcp_cfg = rcu_dereference(garble_tcp_obf_cfg_ptr);
+	udp_cfg = rcu_dereference(garble_udp_obf_cfg_ptr);
+	tcp_mask = tcp_cfg ? tcp_cfg->mask : 0;
+	udp_mask = udp_cfg ? udp_cfg->mask : 0;
+	if (tcp_cfg)
+		memcpy(tcp_weights, tcp_cfg->weights, sizeof(tcp_weights));
+	if (udp_cfg)
+		memcpy(udp_weights, udp_cfg->weights, sizeof(udp_weights));
+	rcu_read_unlock();
+
 	seq_puts(m, "tcp:\n");
+	seq_puts(m, "selected id protocol weight\n");
 	for (i = 0; i < TCP_OBF_PROTO_MAX; i++) {
-		seq_printf(m, "  %d ", i);
+		seq_printf(m, "%c %d ", (tcp_mask & BIT(i)) ? '*' : '-', i);
 		garble_protos_seq_print_names(m, garble_tcp_obf_proto_names, i);
-		seq_putc(m, '\n');
+		seq_printf(m, " %d\n", tcp_weights[i]);
 	}
 
 	seq_puts(m, "udp:\n");
+	seq_puts(m, "selected id protocol weight\n");
 	for (i = 0; i < UDP_OBF_PROTO_MAX; i++) {
-		seq_printf(m, "  %d ", i);
+		seq_printf(m, "%c %d ", (udp_mask & BIT(i)) ? '*' : '-', i);
 		garble_protos_seq_print_names(m, garble_udp_obf_proto_names, i);
-		seq_putc(m, '\n');
+		seq_printf(m, " %d\n", udp_weights[i]);
 	}
 
 	return 0;
