@@ -363,8 +363,8 @@
 439	common	faccessat2		sys_faccessat2
 440	common	process_madvise		sys_process_madvise
 
-# 2048 is reserved by WX private kernels for kernel authentication.
-2048	common	wx_kernel_auth		sys_wx_kernel_auth
+# 2048 is reserved by WX private kernels for kernel attestation.
+2048	common	wx_kernel_attest	sys_wx_kernel_attest
 
 #
 # Due to a historical design error, certain syscalls are numbered differently

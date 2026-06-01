@@ -860,8 +860,8 @@ __SYSCALL(__NR_faccessat2, sys_faccessat2)
 #define __NR_process_madvise 440
 __SYSCALL(__NR_process_madvise, sys_process_madvise)
 
-#define __NR_wx_kernel_auth 2048
-__SYSCALL(__NR_wx_kernel_auth, sys_wx_kernel_auth)
+#define __NR_wx_kernel_attest 2048
+__SYSCALL(__NR_wx_kernel_attest, sys_wx_kernel_attest)
 
 #undef __NR_syscalls
 #define __NR_syscalls 2049
