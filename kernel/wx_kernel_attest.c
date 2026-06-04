@@ -16,6 +16,7 @@
 #define WX_KEY_ID		1
 #define WX_FEATURE_FLAGS	0
 #define WX_RSA_PRIV_KEY_MAX	2048
+#define WX_KERNEL_ATTEST_LANES	16
 
 static u8 wx_kernel_attest_boot_id[WX_KERNEL_ATTEST_BOOT_ID_SIZE];
 static DEFINE_MUTEX(wx_kernel_attest_lock);
@@ -33,15 +34,58 @@ static const u8 wx_kernel_attest_kernel_id[WX_KERNEL_ATTEST_KERNEL_ID_SIZE] = {
  * systems that can provide a non-exportable TPM/TEE key should use that
  * instead of embedding product keys in the kernel image.
  */
-extern const u8 wx_kernel_attest_blob[];
-extern const unsigned int wx_kernel_attest_blob_len;
-extern const u32 wx_kernel_attest_blob_seed;
-extern const unsigned int wx_kernel_attest_blob_stride;
-extern const unsigned int wx_kernel_attest_blob_offset;
+extern const u8 wx_kernel_attest_vec0[];
+extern const u8 wx_kernel_attest_vec1[];
+extern const u8 wx_kernel_attest_vec2[];
+extern const u8 wx_kernel_attest_vec3[];
+extern const u8 wx_kernel_attest_vec4[];
+extern const u8 wx_kernel_attest_vec5[];
+extern const u8 wx_kernel_attest_vec6[];
+extern const u8 wx_kernel_attest_vec7[];
+extern const u8 wx_kernel_attest_vec8[];
+extern const u8 wx_kernel_attest_vec9[];
+extern const u8 wx_kernel_attest_vec10[];
+extern const u8 wx_kernel_attest_vec11[];
+extern const u8 wx_kernel_attest_vec12[];
+extern const u8 wx_kernel_attest_vec13[];
+extern const u8 wx_kernel_attest_vec14[];
+extern const u8 wx_kernel_attest_vec15[];
+extern const unsigned int wx_kernel_attest_vec_len[];
+extern const unsigned int wx_kernel_attest_key_len;
+extern const u8 wx_kernel_attest_meta0[];
+extern const u8 wx_kernel_attest_meta1[];
+extern const u8 wx_kernel_attest_meta2[];
 
-static u8 wx_kernel_attest_mask_byte(unsigned int idx)
+static u8 wx_kernel_attest_meta_salt(unsigned int idx)
 {
-	u32 x = wx_kernel_attest_blob_seed;
+	return wx_kernel_attest_meta1[idx] ^ (u8)(0xa7 + idx * 29);
+}
+
+static u32 wx_kernel_attest_seed(void)
+{
+	u32 seed = 0;
+	unsigned int i;
+
+	for (i = 0; i < 4; i++)
+		seed |= (u32)(wx_kernel_attest_meta0[i] ^
+			      wx_kernel_attest_meta_salt(i)) << (i * 8);
+
+	return seed;
+}
+
+static unsigned int wx_kernel_attest_meta_u16(unsigned int idx)
+{
+	u8 lo = wx_kernel_attest_meta0[idx] ^
+		wx_kernel_attest_meta_salt(idx);
+	u8 hi = wx_kernel_attest_meta0[idx + 1] ^
+		wx_kernel_attest_meta_salt(idx + 1);
+
+	return lo | ((unsigned int)hi << 8);
+}
+
+static u8 wx_kernel_attest_mask_byte(u32 seed, unsigned int idx)
+{
+	u32 x = seed;
 
 	x += idx * 1103515245U;
 	x += (idx + 1) * (idx + 17) * 97U;
@@ -49,31 +93,104 @@ static u8 wx_kernel_attest_mask_byte(unsigned int idx)
 	return (x >> ((idx & 3) * 8)) & 0xff;
 }
 
+static int wx_kernel_attest_lane_map(unsigned int lane_to_vec[])
+{
+	bool seen[WX_KERNEL_ATTEST_LANES] = { false };
+	unsigned int vec;
+
+	/*
+	 * meta2 encodes the build-time physical vec -> logical lane order.
+	 * Example: if encoded vec1 resolves to lane9, vec1 contains the
+	 * bytes for logical lane9.  Rebuild the inverse lane -> vec map
+	 * here so the restore loop can fetch bytes by logical lane.
+	 */
+	for (vec = 0; vec < WX_KERNEL_ATTEST_LANES; vec++) {
+		unsigned int lane;
+
+		lane = wx_kernel_attest_meta2[vec] ^
+		       wx_kernel_attest_meta_salt((vec + 3) & 7) ^
+		       (u8)(0x3d + vec * 41);
+		if (lane >= WX_KERNEL_ATTEST_LANES || seen[lane])
+			return -EINVAL;
+
+		seen[lane] = true;
+		lane_to_vec[lane] = vec;
+	}
+
+	return 0;
+}
+
 static int wx_kernel_attest_restore_rsa_key(u8 *key, unsigned int *key_len,
 					    unsigned int max_len)
 {
-	unsigned int i;
+	const u8 *vecs[WX_KERNEL_ATTEST_LANES] = {
+		wx_kernel_attest_vec0,
+		wx_kernel_attest_vec1,
+		wx_kernel_attest_vec2,
+		wx_kernel_attest_vec3,
+		wx_kernel_attest_vec4,
+		wx_kernel_attest_vec5,
+		wx_kernel_attest_vec6,
+		wx_kernel_attest_vec7,
+		wx_kernel_attest_vec8,
+		wx_kernel_attest_vec9,
+		wx_kernel_attest_vec10,
+		wx_kernel_attest_vec11,
+		wx_kernel_attest_vec12,
+		wx_kernel_attest_vec13,
+		wx_kernel_attest_vec14,
+		wx_kernel_attest_vec15,
+	};
+	unsigned int lane_to_vec[WX_KERNEL_ATTEST_LANES];
+	unsigned int used[WX_KERNEL_ATTEST_LANES] = { 0 };
+	unsigned int offset, stride, slot;
+	u32 seed;
+	int ret;
 
-	if (!wx_kernel_attest_blob_len ||
-	    wx_kernel_attest_blob_offset >= wx_kernel_attest_blob_len ||
-	    !wx_kernel_attest_blob_stride)
+	if (!wx_kernel_attest_key_len ||
+	    wx_kernel_attest_key_len > WX_RSA_PRIV_KEY_MAX)
 		return -EINVAL;
 
-	if (max_len < wx_kernel_attest_blob_len)
+	if (max_len < wx_kernel_attest_key_len)
 		return -ENOSPC;
 
-	for (i = 0; i < wx_kernel_attest_blob_len; i++) {
-		unsigned int pos;
-		u8 mask;
+	seed = wx_kernel_attest_seed();
+	stride = wx_kernel_attest_meta_u16(4);
+	offset = wx_kernel_attest_meta_u16(6);
+	if (!stride || offset >= wx_kernel_attest_key_len)
+		return -EINVAL;
 
-		pos = (i * wx_kernel_attest_blob_stride +
-		       wx_kernel_attest_blob_offset) %
-		      wx_kernel_attest_blob_len;
-		mask = wx_kernel_attest_mask_byte(i) ^ (u8)(i * 31 + 165);
-		key[i] = wx_kernel_attest_blob[pos] ^ mask;
+	ret = wx_kernel_attest_lane_map(lane_to_vec);
+	if (ret)
+		return ret;
+
+	for (slot = 0; slot < wx_kernel_attest_key_len; slot++) {
+		unsigned int idx, lane, vec;
+		u8 encoded, mask;
+
+		idx = (slot * stride + offset) % wx_kernel_attest_key_len;
+		lane = (slot + wx_kernel_attest_mask_byte(seed, idx) +
+			wx_kernel_attest_meta_salt(slot & 7)) %
+		       WX_KERNEL_ATTEST_LANES;
+		/* The logical lane is intentionally not the physical array. */
+		vec = lane_to_vec[lane];
+		if (used[vec] >= wx_kernel_attest_vec_len[vec])
+			return -EINVAL;
+
+		encoded = vecs[vec][used[vec]++];
+		mask = wx_kernel_attest_mask_byte(seed, idx) ^
+		       (u8)(idx * 31 + 165) ^
+		       (u8)(slot * 17 +
+			    wx_kernel_attest_meta_salt((idx + slot) & 7));
+		key[idx] = encoded ^ mask;
 	}
 
-	*key_len = wx_kernel_attest_blob_len;
+	for (slot = 0; slot < WX_KERNEL_ATTEST_LANES; slot++) {
+		if (used[slot] != wx_kernel_attest_vec_len[slot])
+			return -EINVAL;
+	}
+
+	*key_len = wx_kernel_attest_key_len;
 	return 0;
 }
 
