@@ -28,21 +28,52 @@ static const u8 wx_kernel_attest_kernel_id[WX_KERNEL_ATTEST_KERNEL_ID_SIZE] = {
 };
 
 /*
- * The DER-encoded RSA private key is generated at build time from
- * kernel/wx_kernel_attest_private.pem into kernel/wx_kernel_attest_key_blob.c.
+ * The signing key material is build-time encoded into
+ * kernel/wx_kernel_attest_key_blob.c.  This is an obfuscation layer only:
+ * systems that can provide a non-exportable TPM/TEE key should use that
+ * instead of embedding product keys in the kernel image.
  */
-extern const u8 wx_rsa_priv_key_der[];
-extern const unsigned int wx_rsa_priv_key_der_len;
+extern const u8 wx_kernel_attest_blob[];
+extern const unsigned int wx_kernel_attest_blob_len;
+extern const u32 wx_kernel_attest_blob_seed;
+extern const unsigned int wx_kernel_attest_blob_stride;
+extern const unsigned int wx_kernel_attest_blob_offset;
 
+static u8 wx_kernel_attest_mask_byte(unsigned int idx)
+{
+	u32 x = wx_kernel_attest_blob_seed;
+
+	x += idx * 1103515245U;
+	x += (idx + 1) * (idx + 17) * 97U;
+
+	return (x >> ((idx & 3) * 8)) & 0xff;
+}
 
 static int wx_kernel_attest_restore_rsa_key(u8 *key, unsigned int *key_len,
 					    unsigned int max_len)
 {
-	if (max_len < wx_rsa_priv_key_der_len)
+	unsigned int i;
+
+	if (!wx_kernel_attest_blob_len ||
+	    wx_kernel_attest_blob_offset >= wx_kernel_attest_blob_len ||
+	    !wx_kernel_attest_blob_stride)
+		return -EINVAL;
+
+	if (max_len < wx_kernel_attest_blob_len)
 		return -ENOSPC;
 
-	memcpy(key, wx_rsa_priv_key_der, wx_rsa_priv_key_der_len);
-	*key_len = wx_rsa_priv_key_der_len;
+	for (i = 0; i < wx_kernel_attest_blob_len; i++) {
+		unsigned int pos;
+		u8 mask;
+
+		pos = (i * wx_kernel_attest_blob_stride +
+		       wx_kernel_attest_blob_offset) %
+		      wx_kernel_attest_blob_len;
+		mask = wx_kernel_attest_mask_byte(i) ^ (u8)(i * 31 + 165);
+		key[i] = wx_kernel_attest_blob[pos] ^ mask;
+	}
+
+	*key_len = wx_kernel_attest_blob_len;
 	return 0;
 }
 
