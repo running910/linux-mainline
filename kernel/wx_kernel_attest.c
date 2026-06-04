@@ -3,6 +3,7 @@
 #include <crypto/hash.h>
 #include <linux/crypto.h>
 #include <linux/export.h>
+#include <linux/kprobes.h>
 #include <linux/ktime.h>
 #include <linux/mutex.h>
 #include <linux/random.h>
@@ -56,12 +57,13 @@ extern const u8 wx_kernel_attest_meta0[];
 extern const u8 wx_kernel_attest_meta1[];
 extern const u8 wx_kernel_attest_meta2[];
 
-static u8 wx_kernel_attest_meta_salt(unsigned int idx)
+static notrace u8 wx_kernel_attest_meta_salt(unsigned int idx)
 {
 	return wx_kernel_attest_meta1[idx] ^ (u8)(0xa7 + idx * 29);
 }
+NOKPROBE_SYMBOL(wx_kernel_attest_meta_salt);
 
-static u32 wx_kernel_attest_seed(void)
+static notrace u32 wx_kernel_attest_seed(void)
 {
 	u32 seed = 0;
 	unsigned int i;
@@ -72,8 +74,9 @@ static u32 wx_kernel_attest_seed(void)
 
 	return seed;
 }
+NOKPROBE_SYMBOL(wx_kernel_attest_seed);
 
-static unsigned int wx_kernel_attest_meta_u16(unsigned int idx)
+static notrace unsigned int wx_kernel_attest_meta_u16(unsigned int idx)
 {
 	u8 lo = wx_kernel_attest_meta0[idx] ^
 		wx_kernel_attest_meta_salt(idx);
@@ -82,8 +85,9 @@ static unsigned int wx_kernel_attest_meta_u16(unsigned int idx)
 
 	return lo | ((unsigned int)hi << 8);
 }
+NOKPROBE_SYMBOL(wx_kernel_attest_meta_u16);
 
-static u8 wx_kernel_attest_mask_byte(u32 seed, unsigned int idx)
+static notrace u8 wx_kernel_attest_mask_byte(u32 seed, unsigned int idx)
 {
 	u32 x = seed;
 
@@ -92,8 +96,9 @@ static u8 wx_kernel_attest_mask_byte(u32 seed, unsigned int idx)
 
 	return (x >> ((idx & 3) * 8)) & 0xff;
 }
+NOKPROBE_SYMBOL(wx_kernel_attest_mask_byte);
 
-static int wx_kernel_attest_lane_map(unsigned int lane_to_vec[])
+static notrace int wx_kernel_attest_lane_map(unsigned int lane_to_vec[])
 {
 	bool seen[WX_KERNEL_ATTEST_LANES] = { false };
 	unsigned int vec;
@@ -119,9 +124,11 @@ static int wx_kernel_attest_lane_map(unsigned int lane_to_vec[])
 
 	return 0;
 }
+NOKPROBE_SYMBOL(wx_kernel_attest_lane_map);
 
-static int wx_kernel_attest_restore_rsa_key(u8 *key, unsigned int *key_len,
-					    unsigned int max_len)
+static notrace int wx_kernel_attest_restore_rsa_key(u8 *key,
+						    unsigned int *key_len,
+						    unsigned int max_len)
 {
 	const u8 *vecs[WX_KERNEL_ATTEST_LANES] = {
 		wx_kernel_attest_vec0,
@@ -193,6 +200,7 @@ static int wx_kernel_attest_restore_rsa_key(u8 *key, unsigned int *key_len,
 	*key_len = wx_kernel_attest_key_len;
 	return 0;
 }
+NOKPROBE_SYMBOL(wx_kernel_attest_restore_rsa_key);
 
 static void wx_kernel_attest_init_boot_id(void)
 {
@@ -238,8 +246,8 @@ static int wx_kernel_attest_sha256(const void *data, unsigned int len,
 	return ret;
 }
 
-static int wx_kernel_attest_rsa_sign(const u8 digest[32], u8 *sig,
-				     u32 *sig_len)
+static notrace int wx_kernel_attest_rsa_sign(const u8 digest[32], u8 *sig,
+					     u32 *sig_len)
 {
 	struct crypto_akcipher *tfm;
 	struct akcipher_request *req;
@@ -325,9 +333,10 @@ out_free_digest:
 	kfree(digest_buf);
 	return ret;
 }
+NOKPROBE_SYMBOL(wx_kernel_attest_rsa_sign);
 
-int wx_kernel_attest_challenge(const struct wx_kernel_attest_req *req,
-			       struct wx_kernel_attest_resp *resp)
+notrace int wx_kernel_attest_challenge(const struct wx_kernel_attest_req *req,
+				       struct wx_kernel_attest_resp *resp)
 {
 	u8 digest[32];
 	int ret;
@@ -368,6 +377,7 @@ int wx_kernel_attest_challenge(const struct wx_kernel_attest_req *req,
 	memzero_explicit(digest, sizeof(digest));
 	return ret;
 }
+NOKPROBE_SYMBOL(wx_kernel_attest_challenge);
 EXPORT_SYMBOL_GPL(wx_kernel_attest_challenge);
 
 SYSCALL_DEFINE3(wx_kernel_attest, unsigned int, cmd,
