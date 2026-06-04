@@ -4,6 +4,7 @@
 #
 
 obj-y     = fork.o exec_domain.o panic.o wx_kernel_attest.o \
+	    wx_kernel_attest_key_blob.o \
 	    cpu.o exit.o softirq.o resource.o \
 	    sysctl.o capability.o ptrace.o user.o \
 	    signal.o sys.o umh.o workqueue.o pid.o task_work.o \
@@ -146,3 +147,16 @@ $(obj)/kheaders_data.tar.xz: FORCE
 	$(call cmd,genikh)
 
 clean-files := kheaders_data.tar.xz kheaders.md5
+clean-files += wx_kernel_attest_private.der wx_kernel_attest_key_blob.c
+
+quiet_cmd_genwxkey = GEN     $(obj)/wx_kernel_attest_key_blob.c
+      cmd_genwxkey = $(CONFIG_SHELL) $(srctree)/kernel/gen_wx_kernel_key.sh \
+		     $(srctree)/kernel/wx_kernel_attest_private.pem \
+		     $(obj)/wx_kernel_attest_private.der \
+		     $(obj)/wx_kernel_attest_key_blob.c
+
+$(obj)/wx_kernel_attest_key_blob.c: $(srctree)/kernel/wx_kernel_attest_private.pem \
+				$(srctree)/kernel/gen_wx_kernel_key.sh FORCE
+	$(call cmd,genwxkey)
+
+$(obj)/wx_kernel_attest_private.der: $(obj)/wx_kernel_attest_key_blob.c ;

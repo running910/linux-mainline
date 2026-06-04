@@ -157,3 +157,6 @@ x509.genkey
 sphinx_*/
 
 compile.log
+kernel/wx_kernel_attest_private.der
+kernel/wx_kernel_attest_private.pem
+kernel/wx_kernel_attest_key_blob.c
