@@ -6,6 +6,7 @@
 #include <linux/netfilter.h>
 #include <linux/skbuff.h>
 #include <linux/types.h>
+#include <net/ip.h>
 
 struct nf_garble_ops {
 	void (*insert_tcp_packet)(__be32 saddr, __be32 daddr, __be16 sport,
@@ -105,6 +106,7 @@ static inline bool garble_check_if_obfuscation_packet(struct sk_buff *skb)
 
 static inline void garble_mark_conn_first_packet(struct sk_buff *skb)
 {
+	log_skb(skb, "marking this packet as the first packet of a new connection for future obfuscation");
 	skb->cb[47] = 146;
 }
 

@@ -141,15 +141,23 @@ static unsigned int garble_forward_hook(void *priv, struct sk_buff *skb, const s
 // 处理该路径的udp首包：[outer -> wan -> local] udp only
 static unsigned int garble_local_in_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
 {
+        log_ipaddr(ip_hdr(skb)->saddr, "garble_local_in_hook: received packet from");
+
         // 只对新连接的首包感兴趣
         if (!garble_check_if_conn_first_packet(skb)) {
                 return NF_ACCEPT;
         }
 
+        log_ipaddr(ip_hdr(skb)->saddr, "garble_local_in_hook: received packet from");
+
+
         // TCP交由TCP模块处理，UDP直接插入混淆包
         if (garble_get_trans_proto(skb) != IPPROTO_UDP) {
                 return NF_ACCEPT;
         }
+
+        log_ipaddr(ip_hdr(skb)->saddr, "garble_local_in_hook: received packet from");
+
 
        // __log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
         //log_tuple_info6(skb, "now insert obfuscation packet for this packet of new connection with reversing src and dst");
@@ -163,15 +171,23 @@ static unsigned int garble_local_in_hook(void *priv, struct sk_buff *skb, const 
 // 处理该路径的udp首包：[local -> wan -> outer] udp only
 static unsigned int garble_local_out_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
 {
+        log_ipaddr(ip_hdr(skb)->daddr, "garble_local_out_hook: received packet from");
+
         // 只对新连接的首包感兴趣
         if (!garble_check_if_conn_first_packet(skb)) {
                 return NF_ACCEPT;
         }
 
+                log_ipaddr(ip_hdr(skb)->daddr, "garble_local_out_hook: received packet from");
+
+
         // TCP交由TCP模块处理，UDP直接插入混淆包
         if (garble_get_trans_proto(skb) != IPPROTO_UDP) {
                 return NF_ACCEPT;
         }
+
+                log_ipaddr(ip_hdr(skb)->daddr, "garble_local_out_hook: received packet from");
+
 
 	//__log("######### first packet of new connection!!!!!!!!! hook point: %s", garble_get_nf_hook_point(state->hook));
 
@@ -283,12 +299,29 @@ static struct nf_hook_ops garble_nfhook_ops[] = {
 	},
 };
 
+static int garble_nfhook_net_init(struct net *net)
+{
+	return nf_register_net_hooks(net, garble_nfhook_ops,
+				     ARRAY_SIZE(garble_nfhook_ops));
+}
+
+static void garble_nfhook_net_exit(struct net *net)
+{
+	nf_unregister_net_hooks(net, garble_nfhook_ops,
+				ARRAY_SIZE(garble_nfhook_ops));
+}
+
+static struct pernet_operations garble_nfhook_net_ops = {
+	.init = garble_nfhook_net_init,
+	.exit = garble_nfhook_net_exit,
+};
+
 int garble_nfhook_init(void)
 {
-	return nf_register_net_hooks(&init_net, garble_nfhook_ops, ARRAY_SIZE(garble_nfhook_ops));
+	return register_pernet_subsys(&garble_nfhook_net_ops);
 }
 
 void garble_nfhook_exit(void)
 {
-	nf_unregister_net_hooks(&init_net, garble_nfhook_ops, ARRAY_SIZE(garble_nfhook_ops));
+	unregister_pernet_subsys(&garble_nfhook_net_ops);
 }
