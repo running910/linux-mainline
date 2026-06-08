@@ -245,6 +245,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 /* sysctl variables for tcp */
 extern int sysctl_tcp_max_orphans;
 extern long sysctl_tcp_mem[3];
+extern int sysctl_tcp_force_mss_skb;
 extern u32 tcp_timeout_init_ms; 
 
 #define TCP_RACK_LOSS_DETECTION  0x1 /* Use RACK to detect losses */

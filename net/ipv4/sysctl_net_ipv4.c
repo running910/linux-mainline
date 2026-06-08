@@ -508,6 +508,15 @@ static struct ctl_table ipv4_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec
 	},
+	{
+		.procname	= "tcp_force_mss_skb",
+		.data		= &sysctl_tcp_force_mss_skb,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
 #ifdef CONFIG_NETLABEL
 	{
 		.procname	= "cipso_cache_enable",
@@ -1246,15 +1255,6 @@ static struct ctl_table ipv4_net_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ONE,
 		.extra2		= &gso_max_segs,
-	},
-	{
-		.procname	= "tcp_force_mss_skb",
-		.data		= &init_net.ipv4.sysctl_tcp_force_mss_skb,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
 	},
 	{
 		.procname	= "tcp_min_rtt_wlen",

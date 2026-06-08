@@ -292,6 +292,7 @@ EXPORT_SYMBOL_GPL(tcp_orphan_count);
 
 long sysctl_tcp_mem[3] __read_mostly;
 EXPORT_SYMBOL(sysctl_tcp_mem);
+int sysctl_tcp_force_mss_skb __read_mostly;
 
 atomic_long_t tcp_memory_allocated;	/* Current allocated memory. */
 EXPORT_SYMBOL(tcp_memory_allocated);
@@ -952,7 +953,7 @@ int tcp_send_mss(struct sock *sk, int *size_goal, int flags)
 	int mss_now;
 
 	mss_now = tcp_current_mss(sk);
-	if (READ_ONCE(sock_net(sk)->ipv4.sysctl_tcp_force_mss_skb))
+	if (READ_ONCE(sysctl_tcp_force_mss_skb))
 		*size_goal = mss_now;
 	else
 		*size_goal = tcp_xmit_size_goal(sk, mss_now, !(flags & MSG_OOB));
