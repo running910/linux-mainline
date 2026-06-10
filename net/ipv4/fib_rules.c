@@ -320,12 +320,6 @@ static int fib4_rule_configure(struct fib_rule *rule, struct sk_buff *skb,
 		}
 	}
 
-	if (frh->src_len)
-		rule4->src = nla_get_in_addr(tb[FRA_SRC]);
-
-	if (frh->dst_len)
-		rule4->dst = nla_get_in_addr(tb[FRA_DST]);
-
 #ifdef CONFIG_IP_ROUTE_CLASSID
 	if (tb[FRA_FLOW]) {
 		rule4->tclassid = nla_get_u32(tb[FRA_FLOW]);
@@ -341,6 +335,12 @@ static int fib4_rule_configure(struct fib_rule *rule, struct sk_buff *skb,
 	rule4->srcmask = inet_make_mask(rule4->src_len);
 	rule4->dst_len = frh->dst_len;
 	rule4->dstmask = inet_make_mask(rule4->dst_len);
+
+	if (frh->src_len)
+		rule4->src = nla_get_in_addr(tb[FRA_SRC]) & rule4->srcmask;
+
+	if (frh->dst_len)
+		rule4->dst = nla_get_in_addr(tb[FRA_DST]) & rule4->dstmask;
 
 	net->ipv4.fib_has_custom_rules = true;
 
@@ -409,10 +409,14 @@ static int fib4_rule_compare(struct fib_rule *rule, struct fib_rule_hdr *frh,
 		return 0;
 #endif
 
-	if (frh->src_len && (rule4->src != nla_get_in_addr(tb[FRA_SRC])))
+	if (frh->src_len &&
+	    rule4->src != (nla_get_in_addr(tb[FRA_SRC]) &
+			   rule4->srcmask))
 		return 0;
 
-	if (frh->dst_len && (rule4->dst != nla_get_in_addr(tb[FRA_DST])))
+	if (frh->dst_len &&
+	    rule4->dst != (nla_get_in_addr(tb[FRA_DST]) &
+			   rule4->dstmask))
 		return 0;
 
 	return 1;
