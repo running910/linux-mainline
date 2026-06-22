@@ -746,6 +746,7 @@ struct rtl8169_private {
 	struct page *Rx_databuff[NUM_RX_DESC];	/* Rx data buffers */
 	struct ring_info tx_skb[NUM_TX_DESC];	/* Tx data buffers */
 	u16 cp_cmd;
+	u16 intrmitigate;
 	u16 tx_lpi_timer;
 	u32 irq_mask;
 	int irq;
@@ -2197,6 +2198,7 @@ static int rtl_set_coalesce(struct net_device *dev,
 	units = DIV_ROUND_UP(ec->rx_coalesce_usecs * 1000U, scale);
 	w |= FIELD_PREP(RTL_COALESCE_RX_USECS, units);
 
+	tp->intrmitigate = w;
 	RTL_W16(tp, IntrMitigate, w);
 
 	/* Meaning of PktCntrDisable bit changed from RTL8168e-vl */
@@ -4079,8 +4081,7 @@ static void rtl_hw_start_8168(struct rtl8169_private *tp)
 
 	rtl_hw_config(tp);
 
-	/* disable interrupt coalescing */
-	RTL_W16(tp, IntrMitigate, 0x0000);
+	RTL_W16(tp, IntrMitigate, tp->intrmitigate);
 }
 
 static void rtl_hw_start_8169(struct rtl8169_private *tp)
@@ -4097,8 +4098,7 @@ static void rtl_hw_start_8169(struct rtl8169_private *tp)
 
 	rtl8169_set_magic_reg(tp);
 
-	/* disable interrupt coalescing */
-	RTL_W16(tp, IntrMitigate, 0x0000);
+	RTL_W16(tp, IntrMitigate, tp->intrmitigate);
 }
 
 static void rtl_hw_start(struct  rtl8169_private *tp)
