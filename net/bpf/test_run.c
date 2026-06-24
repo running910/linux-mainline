@@ -1787,6 +1787,13 @@ int bpf_prog_test_run_nf(struct bpf_prog *prog,
 			goto out;
 	}
 
+	if (hook_state.hook == NF_INET_LOCAL_OUT &&
+	    hook_state.pf == NFPROTO_IPV6 &&
+	    size < sizeof(struct ipv6hdr)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
 	skb = slab_build_skb(data);
 	if (!skb) {
 		ret = -ENOMEM;
