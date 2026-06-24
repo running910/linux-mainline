@@ -2747,6 +2747,8 @@ static int igb_rxnfc_write_vlan_prio_filter(struct igb_adapter *adapter,
 int igb_add_filter(struct igb_adapter *adapter, struct igb_nfc_filter *input)
 {
 	struct e1000_hw *hw = &adapter->hw;
+	u8 match_flags = input->filter.match_flags;
+	u8 added_flags = 0;
 	int err = -EINVAL;
 
 	if (hw->mac.type == e1000_i210 &&
@@ -2760,6 +2762,7 @@ int igb_add_filter(struct igb_adapter *adapter, struct igb_nfc_filter *input)
 		err = igb_rxnfc_write_etype_filter(adapter, input);
 		if (err)
 			return err;
+		added_flags |= IGB_FILTER_FLAG_ETHER_TYPE;
 	}
 
 	if (input->filter.match_flags & IGB_FILTER_FLAG_DST_MAC_ADDR) {
@@ -2768,7 +2771,8 @@ int igb_add_filter(struct igb_adapter *adapter, struct igb_nfc_filter *input)
 						  input->action, 0);
 		err = min_t(int, err, 0);
 		if (err)
-			return err;
+			goto err_erase_filter;
+		added_flags |= IGB_FILTER_FLAG_DST_MAC_ADDR;
 	}
 
 	if (input->filter.match_flags & IGB_FILTER_FLAG_SRC_MAC_ADDR) {
@@ -2778,11 +2782,22 @@ int igb_add_filter(struct igb_adapter *adapter, struct igb_nfc_filter *input)
 						  IGB_MAC_STATE_SRC_ADDR);
 		err = min_t(int, err, 0);
 		if (err)
-			return err;
+			goto err_erase_filter;
+		added_flags |= IGB_FILTER_FLAG_SRC_MAC_ADDR;
 	}
 
-	if (input->filter.match_flags & IGB_FILTER_FLAG_VLAN_TCI)
+	if (input->filter.match_flags & IGB_FILTER_FLAG_VLAN_TCI) {
 		err = igb_rxnfc_write_vlan_prio_filter(adapter, input);
+		if (err)
+			goto err_erase_filter;
+	}
+
+	return err;
+
+err_erase_filter:
+	input->filter.match_flags = added_flags;
+	igb_erase_filter(adapter, input);
+	input->filter.match_flags = match_flags;
 
 	return err;
 }
