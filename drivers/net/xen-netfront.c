@@ -1850,6 +1850,8 @@ static void xennet_disconnect_backend(struct netfront_info *info)
 		queue->tx.sring = NULL;
 		queue->rx.sring = NULL;
 
+		if (xdp_rxq_info_is_reg(&queue->xdp_rxq))
+			xdp_rxq_info_unreg(&queue->xdp_rxq);
 		page_pool_destroy(queue->page_pool);
 	}
 }
@@ -2235,7 +2237,7 @@ static int xennet_create_queues(struct netfront_info *info,
 		if (ret < 0) {
 			dev_err(&info->xbdev->dev, "can't allocate page pool\n");
 			*num_queues = i;
-			return ret;
+			goto err_destroy_queues;
 		}
 
 		netif_napi_add(queue->info->netdev, &queue->napi, xennet_poll);
@@ -2250,6 +2252,22 @@ static int xennet_create_queues(struct netfront_info *info,
 		return -EINVAL;
 	}
 	return 0;
+
+err_destroy_queues:
+	while (i--) {
+		struct netfront_queue *queue = &info->queues[i];
+
+		if (netif_running(info->netdev))
+			napi_disable(&queue->napi);
+		netif_napi_del(&queue->napi);
+		if (xdp_rxq_info_is_reg(&queue->xdp_rxq))
+			xdp_rxq_info_unreg(&queue->xdp_rxq);
+		page_pool_destroy(queue->page_pool);
+	}
+	kfree(info->queues);
+	info->queues = NULL;
+
+	return ret;
 }
 
 /* Common code used when first setting up, and when resuming. */
