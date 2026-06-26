@@ -122,6 +122,7 @@ static int nft_inner_parse_l2l3(const struct nft_inner *priv,
 	switch (llproto) {
 	case htons(ETH_P_IP): {
 		struct iphdr *iph, _iph;
+		u32 len;
 
 		iph = skb_header_pointer(pkt->skb, nhoff, sizeof(_iph), &_iph);
 		if (!iph)
@@ -130,10 +131,15 @@ static int nft_inner_parse_l2l3(const struct nft_inner *priv,
 		if (iph->ihl < 5 || iph->version != 4)
 			return -1;
 
+		len = iph_totlen(pkt->skb, iph);
+		thoff = iph->ihl * 4;
+		if (pkt->skb->len - nhoff < len || len < thoff)
+			return -1;
+
 		ctx->inner_nhoff = nhoff;
 		ctx->flags |= NFT_PAYLOAD_CTX_INNER_NH;
 
-		thoff = nhoff + (iph->ihl * 4);
+		thoff += nhoff;
 		if ((ntohs(iph->frag_off) & IP_OFFSET) == 0) {
 			ctx->flags |= NFT_PAYLOAD_CTX_INNER_TH;
 			ctx->inner_thoff = thoff;
@@ -145,6 +151,7 @@ static int nft_inner_parse_l2l3(const struct nft_inner *priv,
 		struct ipv6hdr *ip6h, _ip6h;
 		int fh_flags = IP6_FH_F_AUTH;
 		unsigned short fragoff;
+		u32 pkt_len;
 		int l4proto;
 
 		ip6h = skb_header_pointer(pkt->skb, nhoff, sizeof(_ip6h), &_ip6h);
@@ -152,6 +159,10 @@ static int nft_inner_parse_l2l3(const struct nft_inner *priv,
 			return -1;
 
 		if (ip6h->version != 6)
+			return -1;
+
+		pkt_len = ipv6_payload_len(pkt->skb, ip6h);
+		if (pkt_len + sizeof(*ip6h) > pkt->skb->len - nhoff)
 			return -1;
 
 		ctx->inner_nhoff = nhoff;
