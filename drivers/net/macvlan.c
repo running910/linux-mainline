@@ -1614,7 +1614,9 @@ static int macvlan_changelink(struct net_device *dev,
 			      struct netlink_ext_ack *extack)
 {
 	struct macvlan_dev *vlan = netdev_priv(dev);
-	enum macvlan_mode mode;
+	struct nlattr *macaddr_mode = data ?
+				      data[IFLA_MACVLAN_MACADDR_MODE] : NULL;
+	enum macvlan_mode mode = vlan->mode;
 	bool set_mode = false;
 	enum macvlan_macaddr_mode macmode;
 	int ret;
@@ -1627,10 +1629,10 @@ static int macvlan_changelink(struct net_device *dev,
 		if ((mode == MACVLAN_MODE_PASSTHRU) !=
 		    (vlan->mode == MACVLAN_MODE_PASSTHRU))
 			return -EINVAL;
-		if (vlan->mode == MACVLAN_MODE_SOURCE &&
-		    vlan->mode != mode)
-			macvlan_flush_sources(vlan->port, vlan);
 	}
+
+	if (macaddr_mode && mode != MACVLAN_MODE_SOURCE)
+		return -EINVAL;
 
 	if (data && data[IFLA_MACVLAN_FLAGS]) {
 		__u16 flags = nla_get_u16(data[IFLA_MACVLAN_FLAGS]);
@@ -1657,12 +1659,14 @@ static int macvlan_changelink(struct net_device *dev,
 		update_port_bc_cutoff(
 			vlan, nla_get_s32(data[IFLA_MACVLAN_BC_CUTOFF]));
 
-	if (set_mode)
+	if (set_mode) {
+		if (vlan->mode == MACVLAN_MODE_SOURCE &&
+		    vlan->mode != mode)
+			macvlan_flush_sources(vlan->port, vlan);
 		vlan->mode = mode;
-	if (data && data[IFLA_MACVLAN_MACADDR_MODE]) {
-		if (vlan->mode != MACVLAN_MODE_SOURCE)
-			return -EINVAL;
-		macmode = nla_get_u32(data[IFLA_MACVLAN_MACADDR_MODE]);
+	}
+	if (macaddr_mode) {
+		macmode = nla_get_u32(macaddr_mode);
 		ret = macvlan_changelink_sources(vlan, macmode, data);
 		if (ret)
 			return ret;
