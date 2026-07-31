@@ -334,7 +334,7 @@ allow_packet:
 		if (payload_len >= 2 &&
 		    payload[0] == PPP_ALLSTATIONS && payload[1] == PPP_UI) {
 			/* chop off address/control */
-			if (payload_len < 3)
+			if (skb->len < 3)
 				goto drop;
 			skb_pull(skb, 2);
 		}
