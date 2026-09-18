@@ -119,6 +119,23 @@ static bool vxlan_group_used_by_vnifilter(struct vxlan_dev *vxlan,
 	return false;
 }
 
+static bool vxlan_vnigrp_group_used_before(struct vxlan_vni_group *vg,
+					   struct vxlan_vni_node *stop,
+					   union vxlan_addr *ip, int ifindex)
+{
+	struct vxlan_vni_node *v;
+
+	list_for_each_entry(v, &vg->vni_list, vlist) {
+		if (v == stop)
+			break;
+		if (vxlan_group_used_match(ip, ifindex, &v->remote_ip,
+					   ifindex))
+			return true;
+	}
+
+	return false;
+}
+
 /* See if multicast group is already in use by other ID */
 bool vxlan_group_used(struct vxlan_net *vn, struct vxlan_dev *dev,
 		      __be32 vni, union vxlan_addr *rip, int rifindex)
@@ -176,8 +193,10 @@ bool vxlan_group_used(struct vxlan_net *vn, struct vxlan_dev *dev,
 
 static int vxlan_multicast_join_vnigrp(struct vxlan_dev *vxlan)
 {
+	struct vxlan_net *vn = net_generic(vxlan->net, vxlan_net_id);
 	struct vxlan_vni_group *vg = rtnl_dereference(vxlan->vnigrp);
 	struct vxlan_vni_node *v, *tmp, *vgood = NULL;
+	int ifindex = vxlan->default_dst.remote_ifindex;
 	int ret = 0;
 
 	list_for_each_entry_safe(v, tmp, &vg->vni_list, vlist) {
@@ -186,6 +205,11 @@ static int vxlan_multicast_join_vnigrp(struct vxlan_dev *vxlan)
 		/* skip if address is same as default address */
 		if (vxlan_addr_equal(&v->remote_ip,
 				     &vxlan->default_dst.remote_ip))
+			continue;
+		if (vxlan_group_used(vn, vxlan, v->vni, &v->remote_ip, 0))
+			continue;
+		if (vxlan_vnigrp_group_used_before(vg, v, &v->remote_ip,
+						   ifindex))
 			continue;
 		ret = vxlan_igmp_join(vxlan, &v->remote_ip, 0);
 		if (ret == -EADDRINUSE)
@@ -201,6 +225,13 @@ out:
 				continue;
 			if (vxlan_addr_equal(&v->remote_ip,
 					     &vxlan->default_dst.remote_ip))
+				continue;
+			if (vxlan_group_used(vn, vxlan, v->vni,
+					     &v->remote_ip, 0))
+				continue;
+			if (vxlan_vnigrp_group_used_before(vg, v,
+							   &v->remote_ip,
+							   ifindex))
 				continue;
 			vxlan_igmp_leave(vxlan, &v->remote_ip, 0);
 			if (v == vgood)
